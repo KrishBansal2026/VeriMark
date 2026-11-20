@@ -84,7 +84,17 @@ export class LocalFileCheckpointAdapter implements ICheckpointStoreAdapter {
     }
 
     existing.push(checkpoint);
-    fs.writeFileSync(CHECKPOINTS_STORE_FILE, JSON.stringify(existing, null, 2), { mode: 0o600 });
+    const maxRetries = 10;
+    for (let i = 0; i < maxRetries; i++) {
+      try {
+        fs.writeFileSync(CHECKPOINTS_STORE_FILE, JSON.stringify(existing, null, 2), { mode: 0o600 });
+        break;
+      } catch (err: any) {
+        if (i === maxRetries - 1) throw err;
+        const end = Date.now() + 25;
+        while (Date.now() < end) {}
+      }
+    }
   }
 
   async getLatestCheckpoint(): Promise<LedgerCheckpoint | null> {

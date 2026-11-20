@@ -6,9 +6,19 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
 
-    // Support quick demo role switch or credentials
+    // Support quick demo role switch in local development mode only
     if (body.demoRole) {
-      const demoAuth = getDemoTokenForRole(body.demoRole as UserRole);
+      if (process.env.NODE_ENV === 'production') {
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'Forbidden: Demo role authentication is strictly disabled in production environments.',
+          },
+          { status: 403 }
+        );
+      }
+
+      const demoAuth = getDemoTokenForRole(body.demoRole as UserRole, body.studentRegNo);
       const response = NextResponse.json({
         success: true,
         user: demoAuth.user,
@@ -18,7 +28,7 @@ export async function POST(request: Request) {
       // Set HTTP-Only session cookie
       response.cookies.set('verimark_session', demoAuth.token, {
         httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
+        secure: false,
         sameSite: 'lax',
         path: '/',
         maxAge: 86400, // 24 hours

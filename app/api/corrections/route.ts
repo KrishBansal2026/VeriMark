@@ -2,11 +2,16 @@ import { NextResponse } from 'next/server';
 import { dbService } from '@/lib/storage/db';
 import { requireAuth, AuthError } from '@/lib/server/auth';
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    // Only authorized institutional staff can view the full correction request queue
+    await requireAuth(request, ['ADMIN', 'EXAM_CONTROLLER', 'ACADEMIC_DEAN', 'AUDITOR']);
     const requests = await dbService.getCorrectionRequests();
     return NextResponse.json({ success: true, requests });
   } catch (error: any) {
+    if (error instanceof AuthError) {
+      return NextResponse.json({ success: false, error: error.message }, { status: error.statusCode });
+    }
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }

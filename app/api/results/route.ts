@@ -2,8 +2,11 @@ import { NextResponse } from 'next/server';
 import { dbService } from '@/lib/storage/db';
 import { requireAuth, AuthError } from '@/lib/server/auth';
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    // Only authorized institutional staff can view the full student examination roster
+    await requireAuth(request, ['ADMIN', 'EXAM_CONTROLLER', 'ACADEMIC_DEAN', 'AUDITOR']);
+
     await dbService.seedInitialData();
     const results = await dbService.getResults();
     const checkpoints = await dbService.getCheckpoints();
@@ -22,6 +25,9 @@ export async function GET() {
       },
     });
   } catch (error: any) {
+    if (error instanceof AuthError) {
+      return NextResponse.json({ success: false, error: error.message }, { status: error.statusCode });
+    }
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }

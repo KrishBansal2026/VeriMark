@@ -90,15 +90,15 @@ export default function LedgerExplorerPage() {
 
           <div className="bg-[#111c38] border border-[#1c2b50] rounded-xl p-5 space-y-2">
             <div className="flex items-center justify-between">
-              <span className="text-xs text-slate-400 font-medium">Independent Vault Status</span>
+              <span className="text-xs text-slate-400 font-medium">Local Vault Status</span>
               <ShieldCheck className="w-4 h-4 text-emerald-400" />
             </div>
             <div className="flex items-center space-x-2">
               <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
-              <span className="text-base font-bold text-emerald-400">Synchronized & Protected</span>
+              <span className="text-base font-bold text-emerald-400">Protected Local File Vault</span>
             </div>
             <p className="text-xs text-slate-400">
-              {independentCheckpoints.length} checkpoints in secondary storage
+              {independentCheckpoints.length} checkpoints recorded in local vault (.verimark_vault)
             </p>
           </div>
         </div>

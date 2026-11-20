@@ -1,28 +1,69 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
   LayoutDashboard,
   GraduationCap,
+  BarChart3,
   Network,
   UserCheck,
   ShieldAlert,
-  QrCode,
   ShieldCheck,
-  ExternalLink,
+  Clock,
+  FileText,
+  LogOut,
+  LogIn,
 } from 'lucide-react';
+import { AuthUser } from '@/lib/types';
 
-const navigation = [
-  { name: 'Dashboard', href: '/', icon: LayoutDashboard },
+const adminNavigation = [
+  { name: 'Admin Dashboard', href: '/', icon: LayoutDashboard },
   { name: 'Student Results', href: '/results', icon: GraduationCap },
+  { name: 'Analytics', href: '/analytics', icon: BarChart3 },
   { name: 'Ledger Explorer', href: '/ledger', icon: Network },
   { name: 'Dual Approvals', href: '/corrections', icon: UserCheck },
   { name: 'Security Audit', href: '/audit', icon: ShieldAlert },
 ];
 
+const studentNavigation = [
+  { name: 'Student Overview', href: '/student', icon: LayoutDashboard },
+  { name: 'My Results', href: '/student/results', icon: GraduationCap },
+  { name: 'Semester History', href: '/student/history', icon: Clock },
+  { name: 'Digital Marksheet', href: '/student/marksheet', icon: FileText },
+  { name: 'Correction History', href: '/student/corrections', icon: ShieldCheck },
+];
+
 export default function Sidebar() {
   const pathname = usePathname();
+  const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
+
+  const fetchSession = async () => {
+    try {
+      const res = await fetch('/api/auth/me');
+      const data = await res.json();
+      if (data.success && data.authenticated && data.user) {
+        setCurrentUser(data.user);
+      } else {
+        setCurrentUser(null);
+      }
+    } catch {
+      // Background fetch catch
+    }
+  };
+
+  useEffect(() => {
+    fetchSession();
+  }, [pathname]);
+
+  const handleLogout = async () => {
+    await fetch('/api/auth/logout', { method: 'POST' });
+    window.location.href = '/login';
+  };
+
+  const isStudent = currentUser?.role === 'STUDENT' || pathname.startsWith('/student');
+  const activeNavigation = isStudent ? studentNavigation : adminNavigation;
 
   return (
     <aside className="w-64 bg-[#0b132b] border-r border-[#1c2b50] flex flex-col shrink-0 min-h-screen">
@@ -33,8 +74,12 @@ export default function Sidebar() {
         </div>
         <div>
           <div className="flex items-center space-x-1.5">
-            <span className="text-xl font-bold tracking-tight text-white">Veri<span className="text-cyan-400">Mark</span></span>
-            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-400 border border-blue-500/30">H8</span>
+            <span className="text-xl font-bold tracking-tight text-white">
+              Veri<span className="text-cyan-400">Mark</span>
+            </span>
+            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-400 border border-blue-500/30">
+              H8
+            </span>
           </div>
           <p className="text-[11px] text-slate-400 font-medium">Tamper-Proof Result Ledger</p>
         </div>
@@ -42,10 +87,14 @@ export default function Sidebar() {
 
       {/* Navigation Links */}
       <nav className="flex-1 px-3 py-6 space-y-1.5">
-        <div className="px-3 pb-2 text-[10px] font-bold uppercase tracking-wider text-slate-500">
-          Core Modules
+        <div className="px-3 pb-2 text-[10px] font-bold uppercase tracking-wider text-slate-500 flex items-center justify-between">
+          <span>{isStudent ? 'Student Academic Portal' : 'Institutional Governance'}</span>
+          <span className="text-[9px] font-mono text-cyan-400/80">
+            {currentUser?.role || 'AUTH'}
+          </span>
         </div>
-        {navigation.map((item) => {
+
+        {activeNavigation.map((item) => {
           const isActive = pathname === item.href;
           const Icon = item.icon;
           return (
@@ -82,20 +131,32 @@ export default function Sidebar() {
           </div>
           <div className="flex items-center justify-between text-xs text-slate-300">
             <span className="text-slate-400">Checkpoint Store</span>
-            <span className="text-[11px] text-amber-300 font-semibold">Isolated Vault</span>
+            <span className="text-[11px] text-amber-300 font-semibold">Protected Local Vault</span>
           </div>
         </div>
       </nav>
 
-      {/* Footer Info */}
-      <div className="p-4 border-t border-[#1c2b50] bg-[#070d1e]/50 text-xs text-slate-400 space-y-1">
+      {/* Footer Info & Sign-Out */}
+      <div className="p-4 border-t border-[#1c2b50] bg-[#070d1e]/50 text-xs text-slate-400 space-y-2">
         <div className="flex items-center justify-between">
           <span>Code Fuzion 2026</span>
           <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
             Live Ledger
           </span>
         </div>
-        <p className="text-[11px] text-slate-500">Dual Ed25519 Authorization Enabled</p>
+        <p className="text-[11px] text-slate-500">
+          {currentUser ? `Signed in as ${currentUser.name}` : 'Autonomous Role Isolation'}
+        </p>
+
+        {currentUser && (
+          <button
+            onClick={handleLogout}
+            className="w-full mt-2 flex items-center justify-center space-x-1.5 py-1.5 px-3 rounded-lg bg-[#111c38] hover:bg-red-500/10 text-slate-400 hover:text-red-400 border border-[#1c2b50] hover:border-red-500/30 text-[11px] font-medium transition-colors cursor-pointer"
+          >
+            <LogOut className="w-3 h-3" />
+            <span>Sign Out</span>
+          </button>
+        )}
       </div>
     </aside>
   );

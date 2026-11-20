@@ -34,6 +34,21 @@ interface DatabaseSchema {
   correctionRequests: CorrectionRequest[];
 }
 
+function safeWriteFileSync(filePath: string, data: string): void {
+  const maxRetries = 10;
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      fs.writeFileSync(filePath, data, { mode: 0o600 });
+      return;
+    } catch (err: any) {
+      if (i === maxRetries - 1) throw err;
+      // Sleep synchronously for 25ms to let OneDrive / OS release the file lock
+      const end = Date.now() + 25;
+      while (Date.now() < end) {}
+    }
+  }
+}
+
 function ensureDbFile(): DatabaseSchema {
   if (!fs.existsSync(VAULT_DIR)) {
     fs.mkdirSync(VAULT_DIR, { recursive: true });
@@ -57,7 +72,7 @@ function ensureDbFile(): DatabaseSchema {
     correctionRequests: [],
   };
 
-  fs.writeFileSync(DB_FILE, JSON.stringify(initialDb, null, 2), { mode: 0o600 });
+  safeWriteFileSync(DB_FILE, JSON.stringify(initialDb, null, 2));
   return initialDb;
 }
 
@@ -65,7 +80,7 @@ function saveDb(data: DatabaseSchema): void {
   if (!fs.existsSync(VAULT_DIR)) {
     fs.mkdirSync(VAULT_DIR, { recursive: true });
   }
-  fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2), { mode: 0o600 });
+  safeWriteFileSync(DB_FILE, JSON.stringify(data, null, 2));
 }
 
 /**
@@ -191,6 +206,24 @@ export const dbService = {
     const db = ensureDbFile();
     return db.results.filter(
       (r) => r.status === 'published' || r.status === 'corrected'
+    );
+  },
+
+  getResultsByStudentRegNo: async (studentRegNo: string): Promise<StudentResult[]> => {
+    const db = ensureDbFile();
+    const cleanRegNo = studentRegNo.trim().toUpperCase();
+    return db.results.filter(
+      (r) =>
+        r.studentRegNo.trim().toUpperCase() === cleanRegNo &&
+        (r.status === 'published' || r.status === 'corrected')
+    );
+  },
+
+  getCorrectionHistoryByStudentRegNo: async (studentRegNo: string): Promise<CorrectionRequest[]> => {
+    const db = ensureDbFile();
+    const cleanRegNo = studentRegNo.trim().toUpperCase();
+    return db.correctionRequests.filter(
+      (cr) => cr.studentRegNo.trim().toUpperCase() === cleanRegNo
     );
   },
 

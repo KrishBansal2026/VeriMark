@@ -4,7 +4,10 @@ import { getAuthenticatedUser, getAvailableDemoAccounts } from '@/lib/server/aut
 export async function GET(request: Request) {
   try {
     const user = await getAuthenticatedUser(request);
-    const demoAccounts = getAvailableDemoAccounts();
+    
+    // In production, strictly never expose demo account directory
+    const isDev = process.env.NODE_ENV !== 'production';
+    const demoAccounts = isDev ? getAvailableDemoAccounts() : [];
 
     return NextResponse.json({
       success: true,

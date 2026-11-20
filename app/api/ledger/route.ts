@@ -2,9 +2,17 @@ import { NextResponse } from 'next/server';
 import { dbService } from '@/lib/storage/db';
 import { getPublicKeys } from '@/lib/server/keys';
 import { getIndependentCheckpoints } from '@/lib/storage/independentCheckpointStore';
+import { requireAuth, AuthError } from '@/lib/server/auth';
 
-export async function GET() {
+export async function GET(request: Request): Promise<NextResponse>;
+export async function GET(): Promise<NextResponse>;
+export async function GET(request?: Request): Promise<NextResponse> {
   try {
+    if (request) {
+      // Institutional roles authorized to view the raw cryptographic ledger
+      await requireAuth(request, ['ADMIN', 'EXAM_CONTROLLER', 'ACADEMIC_DEAN', 'AUDITOR']);
+    }
+
     await dbService.seedInitialData();
     const events = await dbService.getLedgerEvents();
     const checkpoints = await dbService.getCheckpoints();
@@ -21,6 +29,9 @@ export async function GET() {
       publicKeys,
     });
   } catch (error: any) {
+    if (error instanceof AuthError) {
+      return NextResponse.json({ success: false, error: error.message }, { status: error.statusCode });
+    }
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }
