@@ -141,7 +141,7 @@ export default function SecurityAuditPage() {
         subtitle="Independent verification of database records against Merkle roots and signed checkpoints"
       />
 
-      <main className="p-4 sm:p-6 md:p-8 space-y-6 max-w-7xl mx-auto w-full">
+      <main className="p-8 space-y-8 max-w-7xl">
         {/* Action message notification */}
         {actionMessage && (
           <div className="p-4 rounded-xl bg-blue-500/10 border border-blue-500/30 text-blue-300 text-xs flex items-center space-x-2">

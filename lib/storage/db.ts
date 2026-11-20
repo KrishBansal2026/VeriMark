@@ -23,13 +23,11 @@ import {
   getLatestIndependentCheckpoint,
   resetIndependentStoreForTesting,
 } from './independentCheckpointStore';
-import { userStore } from './userStore';
 
 const VAULT_DIR = path.join(process.cwd(), '.verimark_vault');
 const DB_FILE = path.join(VAULT_DIR, 'database.json');
 
 interface DatabaseSchema {
-  users?: any[];
   results: StudentResult[];
   ledgerEvents: LedgerEvent[];
   checkpoints: LedgerCheckpoint[];
@@ -189,16 +187,13 @@ export function appendLedgerEvent(
 export const dbService = {
   resetForTesting: (): void => {
     resetIndependentStoreForTesting();
-    userStore.resetUserStoreForTesting();
     const cleanDb: DatabaseSchema = {
-      users: undefined,
       results: [],
       ledgerEvents: [],
       checkpoints: [],
       correctionRequests: [],
     };
     saveDb(cleanDb);
-    userStore.resetUserStoreForTesting();
   },
 
   // Results

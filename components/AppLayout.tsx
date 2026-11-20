@@ -2,7 +2,6 @@
 
 import { usePathname } from 'next/navigation';
 import Sidebar from './Sidebar';
-import { NavProvider } from './NavContext';
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -23,13 +22,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <NavProvider>
-      <div className="flex min-h-screen w-full bg-[#070d1e] text-slate-100">
-        <Sidebar />
-        <div className="flex-1 flex flex-col min-w-0 overflow-y-auto">
-          {children}
-        </div>
+    <div className="flex min-h-screen w-full bg-[#070d1e] text-slate-100">
+      <Sidebar />
+      <div className="flex-1 flex flex-col min-w-0 overflow-y-auto">
+        {children}
       </div>
-    </NavProvider>
+    </div>
   );
 }

@@ -13,72 +13,33 @@ import {
   Layers,
 } from 'lucide-react';
 import { StudentResult } from '@/lib/types';
-import StudentErrorState from '@/components/StudentErrorState';
 
 export default function StudentSemesterHistoryPage() {
   const [results, setResults] = useState<StudentResult[]>([]);
   const [loading, setLoading] = useState(true);
-  const [errorState, setErrorState] = useState<{
-    type: 'SESSION_EXPIRED' | 'ACCESS_DENIED' | 'SERVER_ERROR';
-    message: string;
-  } | null>(null);
   const [studentInfo, setStudentInfo] = useState<{ studentRegNo: string; studentName: string; course: string } | null>(null);
 
-  const fetchHistory = async () => {
-    setLoading(true);
-    setErrorState(null);
-    try {
-      const res = await fetch('/api/student/results');
-      if (res.status === 401) {
-        const data = await res.json().catch(() => ({}));
-        setErrorState({
-          type: 'SESSION_EXPIRED',
-          message: data.error || 'Your authenticated session has expired. Redirecting to login to preserve academic history confidentiality...',
-        });
-        return;
-      }
-      if (res.status === 403) {
-        const data = await res.json().catch(() => ({}));
-        setErrorState({
-          type: 'ACCESS_DENIED',
-          message: data.error || 'Access Denied: You do not have permission to view this semester history.',
-        });
-        return;
-      }
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        setErrorState({
-          type: 'SERVER_ERROR',
-          message: data.error || `Server responded with status ${res.status}.`,
-        });
-        return;
-      }
-      const data = await res.json();
-      if (data.success) {
-        setResults(data.results || []);
-        setStudentInfo({
-          studentRegNo: data.studentRegNo,
-          studentName: data.studentName,
-          course: data.course,
-        });
-      } else {
-        setErrorState({
-          type: 'SERVER_ERROR',
-          message: data.error || 'Failed to retrieve academic history.',
-        });
-      }
-    } catch (err: any) {
-      console.error(err);
-      setErrorState({
-        type: 'SERVER_ERROR',
-        message: err.message || 'Network communication error connecting to VeriMark ledger.',
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
+    const fetchHistory = async () => {
+      setLoading(true);
+      try {
+        const res = await fetch('/api/student/results');
+        const data = await res.json();
+        if (data.success) {
+          setResults(data.results);
+          setStudentInfo({
+            studentRegNo: data.studentRegNo,
+            studentName: data.studentName,
+            course: data.course,
+          });
+        }
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
     fetchHistory();
   }, []);
 
@@ -92,17 +53,6 @@ export default function StudentSemesterHistoryPage() {
     return acc;
   }, {} as Record<string, StudentResult[]>);
 
-  if (errorState) {
-    return (
-      <StudentErrorState
-        type={errorState.type}
-        message={errorState.message}
-        onRetry={fetchHistory}
-        currentPath="/student/history"
-      />
-    );
-  }
-
   return (
     <>
       <Header
@@ -110,7 +60,7 @@ export default function StudentSemesterHistoryPage() {
         subtitle={`Chronological academic record for ${studentInfo?.studentName || 'Student'} (${studentInfo?.studentRegNo || ''})`}
       />
 
-      <main className="p-4 sm:p-6 md:p-8 space-y-6 max-w-7xl mx-auto w-full">
+      <main className="p-8 space-y-8 max-w-7xl">
         {/* Top Info Banner */}
         <div className="bg-[#111c38] border border-[#1c2b50] rounded-xl p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="space-y-1">
@@ -132,15 +82,12 @@ export default function StudentSemesterHistoryPage() {
 
         {/* Examination Timeline */}
         {loading ? (
-          <div className="p-12 text-center text-slate-400 bg-[#111c38] border border-[#1c2b50] rounded-xl flex flex-col items-center justify-center space-y-3">
-            <div className="w-8 h-8 rounded-full border-2 border-cyan-500/20 border-t-cyan-400 animate-spin" />
-            <p className="text-xs font-mono text-cyan-400/90">Loading semester examination history from ledger...</p>
+          <div className="p-12 text-center text-slate-400 bg-[#111c38] border border-[#1c2b50] rounded-xl">
+            Loading semester history...
           </div>
         ) : Object.keys(groupedByExam).length === 0 ? (
-          <div className="p-12 text-center text-slate-400 bg-[#111c38] border border-[#1c2b50] rounded-xl space-y-2">
-            <Clock className="w-8 h-8 text-slate-500 mx-auto" />
-            <p className="text-sm font-semibold text-slate-300">No examination sessions recorded.</p>
-            <p className="text-xs text-slate-500">Historical records will appear here as terms are finalized.</p>
+          <div className="p-12 text-center text-slate-400 bg-[#111c38] border border-[#1c2b50] rounded-xl">
+            No examination records found.
           </div>
         ) : (
           <div className="space-y-8">

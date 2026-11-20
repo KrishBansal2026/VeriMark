@@ -19,16 +19,11 @@ import {
   FileCheck2,
 } from 'lucide-react';
 import { StudentResult } from '@/lib/types';
-import StudentErrorState from '@/components/StudentErrorState';
 
 export default function StudentMarksheetPage() {
   const [results, setResults] = useState<StudentResult[]>([]);
   const [selectedResult, setSelectedResult] = useState<StudentResult | null>(null);
   const [loading, setLoading] = useState(true);
-  const [errorState, setErrorState] = useState<{
-    type: 'SESSION_EXPIRED' | 'ACCESS_DENIED' | 'SERVER_ERROR';
-    message: string;
-  } | null>(null);
   const [studentInfo, setStudentInfo] = useState<{
     studentRegNo: string;
     studentName: string;
@@ -43,33 +38,8 @@ export default function StudentMarksheetPage() {
 
   const fetchResultsAndQr = async () => {
     setLoading(true);
-    setErrorState(null);
     try {
       const res = await fetch('/api/student/results');
-      if (res.status === 401) {
-        const data = await res.json().catch(() => ({}));
-        setErrorState({
-          type: 'SESSION_EXPIRED',
-          message: data.error || 'Your authenticated session has expired. Redirecting to login to preserve marksheet confidentiality...',
-        });
-        return;
-      }
-      if (res.status === 403) {
-        const data = await res.json().catch(() => ({}));
-        setErrorState({
-          type: 'ACCESS_DENIED',
-          message: data.error || 'Access Denied: You do not have permission to view this official marksheet.',
-        });
-        return;
-      }
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        setErrorState({
-          type: 'SERVER_ERROR',
-          message: data.error || `Server responded with status ${res.status}.`,
-        });
-        return;
-      }
       const data = await res.json();
       if (data.success && data.results?.length > 0) {
         setResults(data.results);
@@ -85,18 +55,9 @@ export default function StudentMarksheetPage() {
 
         // Fetch high-resolution verification QR code
         fetchQrCode(activeResult.id);
-      } else if (!data.success) {
-        setErrorState({
-          type: 'SERVER_ERROR',
-          message: data.error || 'Failed to retrieve published examination records.',
-        });
       }
-    } catch (err: any) {
+    } catch (err) {
       console.error('Failed to load marksheet data:', err);
-      setErrorState({
-        type: 'SERVER_ERROR',
-        message: err.message || 'Network communication error connecting to VeriMark ledger.',
-      });
     } finally {
       setLoading(false);
     }
@@ -146,17 +107,6 @@ export default function StudentMarksheetPage() {
     if (pct >= 50) return { grade: 'C', points: 6 };
     return { grade: 'F', points: 0 };
   };
-
-  if (errorState) {
-    return (
-      <StudentErrorState
-        type={errorState.type}
-        message={errorState.message}
-        onRetry={fetchResultsAndQr}
-        currentPath="/student/marksheet"
-      />
-    );
-  }
 
   return (
     <>

@@ -14,36 +14,6 @@ export interface AuthUser {
   publicKey?: string;
   studentRegNo?: string;
   mustChangePassword?: boolean;
-  isActive?: boolean;
-  passwordVersion?: number;
-}
-
-export interface UserRecord {
-  id: string;
-  email: string;
-  name: string;
-  role: UserRole;
-  studentRegNo?: string;
-  passwordHash: string;
-  passwordSalt: string;
-  mustChangePassword: boolean;
-  isActive: boolean;
-  passwordVersion: number;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface SafeUserRecord {
-  id: string;
-  email: string;
-  name: string;
-  role: UserRole;
-  studentRegNo?: string;
-  mustChangePassword: boolean;
-  isActive: boolean;
-  passwordVersion: number;
-  createdAt: string;
-  updatedAt: string;
 }
 
 export interface StudentResult {

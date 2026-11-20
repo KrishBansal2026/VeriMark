@@ -17,62 +17,23 @@ import {
   FileText,
 } from 'lucide-react';
 import { CorrectionRequest } from '@/lib/types';
-import StudentErrorState from '@/components/StudentErrorState';
 
 export default function StudentCorrectionsPage() {
   const [corrections, setCorrections] = useState<CorrectionRequest[]>([]);
   const [studentRegNo, setStudentRegNo] = useState<string>('');
   const [loading, setLoading] = useState(true);
-  const [errorState, setErrorState] = useState<{
-    type: 'SESSION_EXPIRED' | 'ACCESS_DENIED' | 'SERVER_ERROR';
-    message: string;
-  } | null>(null);
 
   const fetchCorrections = async () => {
     setLoading(true);
-    setErrorState(null);
     try {
       const res = await fetch('/api/student/corrections');
-      if (res.status === 401) {
-        const data = await res.json().catch(() => ({}));
-        setErrorState({
-          type: 'SESSION_EXPIRED',
-          message: data.error || 'Your authenticated session has expired. Redirecting to login to preserve confidential audit records...',
-        });
-        return;
-      }
-      if (res.status === 403) {
-        const data = await res.json().catch(() => ({}));
-        setErrorState({
-          type: 'ACCESS_DENIED',
-          message: data.error || 'Access Denied: You do not have permission to view this correction history.',
-        });
-        return;
-      }
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        setErrorState({
-          type: 'SERVER_ERROR',
-          message: data.error || `Server responded with status ${res.status}.`,
-        });
-        return;
-      }
       const data = await res.json();
       if (data.success) {
         setCorrections(data.corrections || []);
         setStudentRegNo(data.studentRegNo || '');
-      } else {
-        setErrorState({
-          type: 'SERVER_ERROR',
-          message: data.error || 'Failed to retrieve statutory correction history.',
-        });
       }
-    } catch (err: any) {
+    } catch (err) {
       console.error('Failed to load correction history:', err);
-      setErrorState({
-        type: 'SERVER_ERROR',
-        message: err.message || 'Network communication error connecting to VeriMark ledger.',
-      });
     } finally {
       setLoading(false);
     }
@@ -81,17 +42,6 @@ export default function StudentCorrectionsPage() {
   useEffect(() => {
     fetchCorrections();
   }, []);
-
-  if (errorState) {
-    return (
-      <StudentErrorState
-        type={errorState.type}
-        message={errorState.message}
-        onRetry={fetchCorrections}
-        currentPath="/student/corrections"
-      />
-    );
-  }
 
   return (
     <>

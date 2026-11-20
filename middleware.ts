@@ -109,8 +109,7 @@ export async function middleware(request: NextRequest) {
       pathname.startsWith('/analytics') ||
       pathname === '/ledger' ||
       pathname === '/corrections' ||
-      pathname === '/audit' ||
-      pathname.startsWith('/admin');
+      pathname === '/audit';
 
     if (isInstitutionalPage) {
       const deniedUrl = new URL('/access-denied', request.url);
@@ -125,8 +124,7 @@ export async function middleware(request: NextRequest) {
       pathname.startsWith('/api/analytics') ||
       pathname.startsWith('/api/corrections') ||
       pathname.startsWith('/api/audit') ||
-      pathname.startsWith('/api/ledger') ||
-      pathname.startsWith('/api/admin');
+      pathname.startsWith('/api/ledger');
 
     if (isInstitutionalApi && !pathname.includes('/qr')) {
       return NextResponse.json(
@@ -148,21 +146,6 @@ export async function middleware(request: NextRequest) {
   }
 
   // Specific institutional page privilege gates
-  if (pathname.startsWith('/admin') || pathname.startsWith('/api/admin')) {
-    if (role !== 'ADMIN') {
-      if (pathname.startsWith('/api/')) {
-        return NextResponse.json(
-          { success: false, error: `Forbidden: Administrative privilege required. Role '${role}' lacks authority.` },
-          { status: 403 }
-        );
-      }
-      const deniedUrl = new URL('/access-denied', request.url);
-      deniedUrl.searchParams.set('reason', 'admin_required');
-      deniedUrl.searchParams.set('path', pathname);
-      return NextResponse.redirect(deniedUrl);
-    }
-  }
-
   if (pathname === '/audit' || pathname.startsWith('/api/audit')) {
     if (role !== 'ADMIN' && role !== 'AUDITOR') {
       if (pathname.startsWith('/api/')) {
