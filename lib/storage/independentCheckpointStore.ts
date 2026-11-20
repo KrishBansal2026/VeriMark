@@ -2,9 +2,12 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { LedgerCheckpoint } from '../types';
 import { verifyCheckpoint } from '../crypto/ed25519';
+import { getVaultDir, safeWriteFileSync as safeWriteVaultFile } from './vaultConfig';
+import { CANONICAL_INDEPENDENT_CHECKPOINTS } from './canonicalVaultData';
 
-const VAULT_DIR = path.join(process.cwd(), '.verimark_vault');
-const CHECKPOINTS_STORE_FILE = path.join(VAULT_DIR, 'independent_checkpoints.json');
+function getCheckpointsFile(): string {
+  return path.join(getVaultDir(), 'independent_checkpoints.json');
+}
 
 /**
  * Phase 6: Checkpoint Storage Adapter Interface.
@@ -16,12 +19,6 @@ export interface ICheckpointStoreAdapter {
   saveCheckpoint(checkpoint: LedgerCheckpoint): Promise<void>;
   getCheckpoints(): Promise<LedgerCheckpoint[]>;
   getLatestCheckpoint(): Promise<LedgerCheckpoint | null>;
-}
-
-function ensureVaultDir() {
-  if (!fs.existsSync(VAULT_DIR)) {
-    fs.mkdirSync(VAULT_DIR, { recursive: true });
-  }
 }
 
 /**
@@ -43,22 +40,40 @@ export class LocalFileCheckpointAdapter implements ICheckpointStoreAdapter {
   isImmutableWORM = false;
 
   async getCheckpoints(): Promise<LedgerCheckpoint[]> {
-    ensureVaultDir();
-    if (!fs.existsSync(CHECKPOINTS_STORE_FILE)) {
-      return [];
+    const storeFile = getCheckpointsFile();
+    if (fs.existsSync(storeFile)) {
+      try {
+        const raw = fs.readFileSync(storeFile, 'utf8');
+        const checkpoints: LedgerCheckpoint[] = JSON.parse(raw);
+        if (Array.isArray(checkpoints) && checkpoints.length > 0) {
+          return checkpoints;
+        }
+      } catch (err) {
+        console.error('Error reading local checkpoint vault:', err);
+      }
     }
-    try {
-      const raw = fs.readFileSync(CHECKPOINTS_STORE_FILE, 'utf8');
-      const checkpoints: LedgerCheckpoint[] = JSON.parse(raw);
-      return checkpoints;
-    } catch (err) {
-      console.error('Error reading local checkpoint vault:', err);
-      return [];
+
+    // Check if repository cwd has independent_checkpoints.json
+    const cwdFile = path.join(process.cwd(), '.verimark_vault', 'independent_checkpoints.json');
+    if (fs.existsSync(cwdFile)) {
+      try {
+        const raw = fs.readFileSync(cwdFile, 'utf8');
+        const checkpoints: LedgerCheckpoint[] = JSON.parse(raw);
+        if (Array.isArray(checkpoints) && checkpoints.length > 0) {
+          safeWriteVaultFile(storeFile, JSON.stringify(checkpoints, null, 2));
+          return checkpoints;
+        }
+      } catch {}
     }
+
+    // Fall back to CANONICAL_INDEPENDENT_CHECKPOINTS snapshot
+    const canonical: LedgerCheckpoint[] = JSON.parse(JSON.stringify(CANONICAL_INDEPENDENT_CHECKPOINTS));
+    safeWriteVaultFile(storeFile, JSON.stringify(canonical, null, 2));
+    return canonical;
   }
 
   async saveCheckpoint(checkpoint: LedgerCheckpoint): Promise<void> {
-    ensureVaultDir();
+    const storeFile = getCheckpointsFile();
 
     // Verify cryptographic signature before committing
     const verification = verifyCheckpoint(checkpoint);
@@ -84,17 +99,7 @@ export class LocalFileCheckpointAdapter implements ICheckpointStoreAdapter {
     }
 
     existing.push(checkpoint);
-    const maxRetries = 10;
-    for (let i = 0; i < maxRetries; i++) {
-      try {
-        fs.writeFileSync(CHECKPOINTS_STORE_FILE, JSON.stringify(existing, null, 2), { mode: 0o600 });
-        break;
-      } catch (err: any) {
-        if (i === maxRetries - 1) throw err;
-        const end = Date.now() + 25;
-        while (Date.now() < end) {}
-      }
-    }
+    safeWriteVaultFile(storeFile, JSON.stringify(existing, null, 2));
   }
 
   async getLatestCheckpoint(): Promise<LedgerCheckpoint | null> {
@@ -112,9 +117,9 @@ export function getActiveCheckpointAdapter(): ICheckpointStoreAdapter {
 }
 
 export function resetIndependentStoreForTesting(): void {
-  ensureVaultDir();
-  if (fs.existsSync(CHECKPOINTS_STORE_FILE)) {
-    fs.unlinkSync(CHECKPOINTS_STORE_FILE);
+  const storeFile = getCheckpointsFile();
+  if (fs.existsSync(storeFile)) {
+    fs.unlinkSync(storeFile);
   }
 }
 

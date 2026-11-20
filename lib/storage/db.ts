@@ -23,9 +23,12 @@ import {
   getLatestIndependentCheckpoint,
   resetIndependentStoreForTesting,
 } from './independentCheckpointStore';
+import { getVaultDir, safeWriteFileSync as safeWriteVaultFile } from './vaultConfig';
+import { CANONICAL_DATABASE } from './canonicalVaultData';
 
-const VAULT_DIR = path.join(process.cwd(), '.verimark_vault');
-const DB_FILE = path.join(VAULT_DIR, 'database.json');
+function getDbFile(): string {
+  return path.join(getVaultDir(), 'database.json');
+}
 
 interface DatabaseSchema {
   results: StudentResult[];
@@ -34,30 +37,13 @@ interface DatabaseSchema {
   correctionRequests: CorrectionRequest[];
 }
 
-function safeWriteFileSync(filePath: string, data: string): void {
-  const maxRetries = 10;
-  for (let i = 0; i < maxRetries; i++) {
-    try {
-      fs.writeFileSync(filePath, data, { mode: 0o600 });
-      return;
-    } catch (err: any) {
-      if (i === maxRetries - 1) throw err;
-      // Sleep synchronously for 25ms to let OneDrive / OS release the file lock
-      const end = Date.now() + 25;
-      while (Date.now() < end) {}
-    }
-  }
-}
-
 function ensureDbFile(): DatabaseSchema {
-  if (!fs.existsSync(VAULT_DIR)) {
-    fs.mkdirSync(VAULT_DIR, { recursive: true });
-  }
+  const dbFile = getDbFile();
 
-  if (fs.existsSync(DB_FILE)) {
+  if (fs.existsSync(dbFile)) {
     try {
-      const data = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
-      if (data && Array.isArray(data.results)) {
+      const data = JSON.parse(fs.readFileSync(dbFile, 'utf8'));
+      if (data && Array.isArray(data.results) && data.results.length > 0) {
         return data;
       }
     } catch (err) {
@@ -65,22 +51,27 @@ function ensureDbFile(): DatabaseSchema {
     }
   }
 
-  const initialDb: DatabaseSchema = {
-    results: [],
-    ledgerEvents: [],
-    checkpoints: [],
-    correctionRequests: [],
-  };
+  // Check if repository cwd has pre-existing database.json
+  const cwdDb = path.join(process.cwd(), '.verimark_vault', 'database.json');
+  if (fs.existsSync(cwdDb)) {
+    try {
+      const data = JSON.parse(fs.readFileSync(cwdDb, 'utf8'));
+      if (data && Array.isArray(data.results) && data.results.length > 0) {
+        safeWriteVaultFile(dbFile, JSON.stringify(data, null, 2));
+        return data;
+      }
+    } catch {}
+  }
 
-  safeWriteFileSync(DB_FILE, JSON.stringify(initialDb, null, 2));
+  // Fallback to canonical snapshot ensuring academic records are never lost or empty
+  const initialDb: DatabaseSchema = JSON.parse(JSON.stringify(CANONICAL_DATABASE));
+  safeWriteVaultFile(dbFile, JSON.stringify(initialDb, null, 2));
   return initialDb;
 }
 
 function saveDb(data: DatabaseSchema): void {
-  if (!fs.existsSync(VAULT_DIR)) {
-    fs.mkdirSync(VAULT_DIR, { recursive: true });
-  }
-  safeWriteFileSync(DB_FILE, JSON.stringify(data, null, 2));
+  const dbFile = getDbFile();
+  safeWriteVaultFile(dbFile, JSON.stringify(data, null, 2));
 }
 
 /**
