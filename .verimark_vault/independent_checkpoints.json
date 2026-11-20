@@ -1,0 +1,62 @@
+[
+  {
+    "id": "chk_1_ef8bb2db11ec",
+    "sequenceNumber": 1,
+    "merkleRoot": "ee268483ae9817bf3fd229e5892578de9e33134e371fbc96ae290aae43144053",
+    "eventCount": 1,
+    "leafCount": 1,
+    "prevCheckpointHash": "0000000000000000000000000000000000000000000000000000000000000000",
+    "checkpointHash": "ef8bb2db11ec6c7c4df84dd9b5ec17f507ee70e0de39f60636fc59da171e04c1",
+    "signature": "940e87ce02c0842caf7e769fc23ee2840a66bf16c8a5b7d378b67ba12e07613dcd92d32e9dc16c5198d58b4b01cf748593d752f04e45b32e6f8e61a3d80b6d09",
+    "signerPublicKey": "42e9460d091b735ed7f988f789c0fbe116cb90bd49bca26bd0210cf6c65a2d6c",
+    "committedAt": "2026-11-20T15:57:22.534Z"
+  },
+  {
+    "id": "chk_2_b0a351cf7476",
+    "sequenceNumber": 2,
+    "merkleRoot": "5e65c6193696de425ebda7f0ebd05ad99a47d68d028e32564f7e81ea63f4108c",
+    "eventCount": 2,
+    "leafCount": 2,
+    "prevCheckpointHash": "ef8bb2db11ec6c7c4df84dd9b5ec17f507ee70e0de39f60636fc59da171e04c1",
+    "checkpointHash": "b0a351cf74769966f2a0012cfccb3c293f8de56ca57565981b931fcd3dd3b9d7",
+    "signature": "0d5d61ab37b4c009df0f2beb88d2099127629de796af54a5197149dc3bb48bde58b37a3bb51e7d672051fc52992f471a07f7da66dd2cb6fba35ed95d54a02b0e",
+    "signerPublicKey": "42e9460d091b735ed7f988f789c0fbe116cb90bd49bca26bd0210cf6c65a2d6c",
+    "committedAt": "2026-11-20T15:57:22.539Z"
+  },
+  {
+    "id": "chk_3_a3c3066c65b9",
+    "sequenceNumber": 3,
+    "merkleRoot": "dbb135347ca484e641e9c649e3b49e557c3c92e73b33c91455a86537c4106d14",
+    "eventCount": 3,
+    "leafCount": 3,
+    "prevCheckpointHash": "b0a351cf74769966f2a0012cfccb3c293f8de56ca57565981b931fcd3dd3b9d7",
+    "checkpointHash": "a3c3066c65b955b3759a2dcfc218fb381bedda7485c7397c6ae83022f7fe0633",
+    "signature": "8dd75a86456fa7b8789e3305e0cbd4e66e3da06eebdfe4359366ad84f9d71af0b7a205264ce9c55a7a4ac98c588fbfeb5c5351bf414b7fa67aa5b8f1ae5d7906",
+    "signerPublicKey": "42e9460d091b735ed7f988f789c0fbe116cb90bd49bca26bd0210cf6c65a2d6c",
+    "committedAt": "2026-11-20T15:57:22.546Z"
+  },
+  {
+    "id": "chk_4_1d485d61c4e9",
+    "sequenceNumber": 4,
+    "merkleRoot": "cd3d46462f50c42a128db6ba41d692523773a88529c1ce658f95013f15c0a46f",
+    "eventCount": 4,
+    "leafCount": 4,
+    "prevCheckpointHash": "a3c3066c65b955b3759a2dcfc218fb381bedda7485c7397c6ae83022f7fe0633",
+    "checkpointHash": "1d485d61c4e97134769ab8924c85a9b4aa8086809ed28f7e05d699ce8b1bac83",
+    "signature": "277b4f8a4096ed05a902ab23b9a1ffab453cd609766a0a7ef85ba4869e6f1effca9759106cdc975fbc1796cc9e02db55215ccfc79d5a396a3f4169c381cb490b",
+    "signerPublicKey": "42e9460d091b735ed7f988f789c0fbe116cb90bd49bca26bd0210cf6c65a2d6c",
+    "committedAt": "2026-11-20T15:57:22.551Z"
+  },
+  {
+    "id": "chk_5_37707c9a8eeb",
+    "sequenceNumber": 5,
+    "merkleRoot": "dd3eef27b8ac61fffd4f65e7f0514d283f89615cdbb8081cdec1d1a97dcb55bc",
+    "eventCount": 5,
+    "leafCount": 5,
+    "prevCheckpointHash": "1d485d61c4e97134769ab8924c85a9b4aa8086809ed28f7e05d699ce8b1bac83",
+    "checkpointHash": "37707c9a8eeb0f41d0128334693ea358c8bd1b7289d553f059d9db3e9a45fdc8",
+    "signature": "99f4a40bb7dc515aced23d14145dd0e9300cfc29be94680095a98d683c8ca4ad31871d4bc6bd84c783e5857edcfcfaba8fc936f22c7ff7af6f882c8f5347af0b",
+    "signerPublicKey": "42e9460d091b735ed7f988f789c0fbe116cb90bd49bca26bd0210cf6c65a2d6c",
+    "committedAt": "2026-11-20T15:57:22.556Z"
+  }
+]
