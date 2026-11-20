@@ -46,6 +46,7 @@ import {
   ChartColumn,
 } from 'lucide-react';
 import Header from '@/components/Header';
+import StudentErrorState from '@/components/StudentErrorState';
 import { AuthUser, PersonalStudentAnalyticsResponse } from '@/lib/types';
 import SubjectMidEndBarChart from '@/components/student-analytics/SubjectMidEndBarChart';
 import ExamPerformanceTrendsChart from '@/components/student-analytics/ExamPerformanceTrendsChart';
@@ -139,6 +140,10 @@ export default function StudentOverviewPage() {
   const [resultsData, setResultsData] = useState<StudentPortalResponse | null>(null);
   const [analyticsData, setAnalyticsData] = useState<PersonalStudentAnalyticsResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const [errorState, setErrorState] = useState<{
+    type: 'SESSION_EXPIRED' | 'ACCESS_DENIED' | 'SERVER_ERROR';
+    message: string;
+  } | null>(null);
   const [copiedHash, setCopiedHash] = useState<string | null>(null);
   const [expandedSubjects, setExpandedSubjects] = useState<Record<string, boolean>>({});
 
@@ -169,11 +174,39 @@ export default function StudentOverviewPage() {
   const fetchStudentData = async (cutoff = passingCutoff) => {
     try {
       setLoading(true);
+      setErrorState(null);
       const [authRes, resultsRes, analyticsRes] = await Promise.all([
         fetch('/api/auth/me'),
         fetch('/api/student/results'),
         fetch(`/api/student/analytics?benchmark=${cutoff}`),
       ]);
+
+      if (resultsRes.status === 401 || authRes.status === 401) {
+        const data = await resultsRes.json().catch(() => ({}));
+        setErrorState({
+          type: 'SESSION_EXPIRED',
+          message: data.error || 'Your authenticated student session has expired. Redirecting to login to preserve confidential academic records...',
+        });
+        return;
+      }
+
+      if (resultsRes.status === 403) {
+        const data = await resultsRes.json().catch(() => ({}));
+        setErrorState({
+          type: 'ACCESS_DENIED',
+          message: data.error || 'Access Denied: You do not have authorization to view this student dashboard.',
+        });
+        return;
+      }
+
+      if (!resultsRes.ok || !authRes.ok) {
+        const data = await resultsRes.json().catch(() => ({}));
+        setErrorState({
+          type: 'SERVER_ERROR',
+          message: data.error || `Unable to synchronize student ledger records (HTTP ${resultsRes.status}).`,
+        });
+        return;
+      }
 
       const authData = await authRes.json();
       const resultsJson = await resultsRes.json();
@@ -185,13 +218,23 @@ export default function StudentOverviewPage() {
 
       if (resultsJson.success) {
         setResultsData(resultsJson);
+      } else {
+        setErrorState({
+          type: 'SERVER_ERROR',
+          message: resultsJson.error || 'Failed to retrieve published records.',
+        });
+        return;
       }
 
       if (analyticsJson.success) {
         setAnalyticsData(analyticsJson);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to load student portal data:', err);
+      setErrorState({
+        type: 'SERVER_ERROR',
+        message: err.message || 'Network communication error connecting to VeriMark ledger.',
+      });
     } finally {
       setLoading(false);
     }
@@ -365,6 +408,19 @@ export default function StudentOverviewPage() {
           <div className="w-12 h-12 rounded-full border-2 border-cyan-500/20 border-t-cyan-400 animate-spin" />
           <p className="text-sm font-mono text-cyan-400/90 tracking-wide">Syncing authenticated student ledger records...</p>
         </div>
+      </div>
+    );
+  }
+
+  if (errorState) {
+    return (
+      <div className="min-h-screen bg-[#081426] text-white flex flex-col">
+        <StudentErrorState
+          type={errorState.type}
+          message={errorState.message}
+          onRetry={() => fetchStudentData()}
+          currentPath="/student"
+        />
       </div>
     );
   }

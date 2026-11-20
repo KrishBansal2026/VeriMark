@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { authenticateCredentials, getDemoTokenForRole } from '@/lib/server/auth';
+import { checkRateLimit } from '@/lib/server/rateLimiter';
 import { UserRole } from '@/lib/types';
 
 export async function POST(request: Request) {
@@ -41,6 +42,21 @@ export async function POST(request: Request) {
       return NextResponse.json(
         { success: false, error: 'Email and password are required' },
         { status: 400 }
+      );
+    }
+
+    const ip = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || '127.0.0.1';
+    const rateCheck = checkRateLimit(`login:${ip}:${body.email.toLowerCase().trim()}`, 5, 60000);
+    if (!rateCheck.allowed) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Too many login attempts. Please wait ${rateCheck.retryAfterSeconds} seconds before trying again.`,
+        },
+        {
+          status: 429,
+          headers: { 'Retry-After': String(rateCheck.retryAfterSeconds) },
+        }
       );
     }
 

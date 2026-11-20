@@ -61,7 +61,7 @@ export default function LedgerExplorerPage() {
         subtitle="Inspect append-only event blocks, Merkle tree roots, and Ed25519 signed checkpoints"
       />
 
-      <main className="p-8 space-y-8 max-w-7xl">
+      <main className="p-4 sm:p-6 md:p-8 space-y-6 max-w-7xl mx-auto w-full">
         {/* Top Overview Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
           <div className="bg-[#111c38] border border-[#1c2b50] rounded-xl p-5 space-y-2">

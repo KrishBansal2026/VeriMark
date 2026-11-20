@@ -7,7 +7,7 @@ export async function GET(request: Request) {
     
     // In production, strictly never expose demo account directory
     const isDev = process.env.NODE_ENV !== 'production';
-    const demoAccounts = isDev ? getAvailableDemoAccounts() : [];
+    const demoAccounts = isDev ? await getAvailableDemoAccounts() : [];
 
     return NextResponse.json({
       success: true,

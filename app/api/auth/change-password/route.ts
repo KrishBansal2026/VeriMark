@@ -1,9 +1,26 @@
 import { NextResponse } from 'next/server';
 import { requireAuth, changeUserPassword, AuthError } from '@/lib/server/auth';
+import { checkRateLimit } from '@/lib/server/rateLimiter';
 
 export async function POST(request: Request) {
   try {
     const user = await requireAuth(request);
+    
+    // Rate limit password change requests per user
+    const rateCheck = checkRateLimit(`pwd_change:${user.id}`, 5, 60000);
+    if (!rateCheck.allowed) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Too many password change attempts. Please wait ${rateCheck.retryAfterSeconds} seconds before trying again.`,
+        },
+        {
+          status: 429,
+          headers: { 'Retry-After': String(rateCheck.retryAfterSeconds) },
+        }
+      );
+    }
+
     const body = await request.json();
 
     if (!body.currentPassword || !body.newPassword) {

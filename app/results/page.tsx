@@ -199,7 +199,7 @@ export default function ResultsPage() {
         subtitle="Manage marks, publish to append-only ledger, and generate QR verification codes"
       />
 
-      <main className="p-8 space-y-6 max-w-7xl">
+      <main className="p-4 sm:p-6 md:p-8 space-y-6 max-w-7xl mx-auto w-full">
         {/* Controls bar */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center space-x-3 flex-1 max-w-md">

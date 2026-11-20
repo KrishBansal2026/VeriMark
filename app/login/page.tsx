@@ -42,7 +42,15 @@ function LoginForm() {
       .then((res) => res.json())
       .then((data) => {
         if (data.success && data.authenticated && data.user) {
-          if (data.user.role === 'STUDENT') {
+          if (redirectPath && redirectPath.startsWith('/')) {
+            if (data.user.role === 'STUDENT' && !redirectPath.startsWith('/student')) {
+              router.replace('/student');
+            } else if (data.user.role !== 'STUDENT' && redirectPath.startsWith('/student')) {
+              router.replace('/');
+            } else {
+              router.replace(redirectPath);
+            }
+          } else if (data.user.role === 'STUDENT') {
             router.replace('/student');
           } else {
             router.replace('/');
@@ -54,7 +62,7 @@ function LoginForm() {
         }
       })
       .catch(() => {});
-  }, [router]);
+  }, [router, redirectPath]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

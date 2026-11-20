@@ -89,7 +89,7 @@ export default function CorrectionsPage() {
         subtitle="Dual Ed25519 digital signature portal with verified distinct-user session enforcement"
       />
 
-      <main className="p-8 space-y-6 max-w-7xl">
+      <main className="p-4 sm:p-6 md:p-8 space-y-6 max-w-7xl mx-auto w-full">
         {/* Status notification */}
         {actionMessage && (
           <div

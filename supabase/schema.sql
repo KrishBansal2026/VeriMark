@@ -6,15 +6,26 @@
 -- Enable UUID extension if not enabled
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
--- 1. USERS TABLE (Admins, Approvers, Auditors)
+-- 1. USERS TABLE (Persistent Authenticated Directory with Scrypt/Argon2 Parameters)
 CREATE TABLE IF NOT EXISTS users (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id VARCHAR(64) PRIMARY KEY,
     email VARCHAR(255) UNIQUE NOT NULL,
-    full_name VARCHAR(255) NOT NULL,
-    role VARCHAR(50) NOT NULL CHECK (role IN ('admin', 'approver1', 'approver2', 'auditor')),
-    public_key VARCHAR(128), -- Ed25519 public key (hex)
-    created_at TIMESTAMPTZ DEFAULT NOW()
+    name VARCHAR(255) NOT NULL,
+    role VARCHAR(50) NOT NULL CHECK (role IN ('ADMIN', 'EXAM_CONTROLLER', 'ACADEMIC_DEAN', 'AUDITOR', 'STUDENT')),
+    student_reg_no VARCHAR(64),
+    password_hash VARCHAR(255) NOT NULL,
+    password_salt VARCHAR(128) NOT NULL,
+    must_change_password BOOLEAN NOT NULL DEFAULT true,
+    is_active BOOLEAN NOT NULL DEFAULT true,
+    password_version INTEGER NOT NULL DEFAULT 1,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+CREATE INDEX IF NOT EXISTS idx_users_email ON users(LOWER(email));
+CREATE INDEX IF NOT EXISTS idx_users_student_reg_no ON users(student_reg_no);
+CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
+CREATE INDEX IF NOT EXISTS idx_users_is_active ON users(is_active);
 
 -- 2. STUDENTS TABLE
 CREATE TABLE IF NOT EXISTS students (

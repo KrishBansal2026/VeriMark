@@ -1,6 +1,13 @@
 import { createHmac, timingSafeEqual, scryptSync, randomBytes } from 'crypto';
-import { AuthUser, UserRole } from '../types';
+import { AuthUser, UserRole, UserRecord } from '../types';
 import { getServerKeys } from './keys';
+import {
+  userStore,
+  loadLocalUsers,
+  hashPassword as storeHashPassword,
+  validatePasswordStrength,
+  generateSecureTemporaryPassword,
+} from '../storage/userStore';
 
 export class AuthError extends Error {
   statusCode: number;
@@ -23,15 +30,20 @@ interface StoredUser {
   salt: string;
   studentRegNo?: string;
   mustChangePassword?: boolean;
+  isActive?: boolean;
+  passwordVersion?: number;
 }
 
 // Deterministically derive password hash with scrypt
 export function hashPassword(password: string, salt: string): string {
-  return scryptSync(password, salt, 64).toString('hex');
+  return storeHashPassword(password, salt);
 }
 
-// Pre-seeded authorized institutional directory
-const INSTITUTIONAL_USERS: StoredUser[] = [
+// Re-export password utilities
+export { validatePasswordStrength, generateSecureTemporaryPassword };
+
+// Pre-seeded authorized institutional directory (maintained for backwards test compatibility)
+export const INSTITUTIONAL_USERS: StoredUser[] = [
   {
     id: 'usr_admin_01',
     email: 'admin@verimark.edu',
@@ -66,8 +78,7 @@ const INSTITUTIONAL_USERS: StoredUser[] = [
   },
 ];
 
-// Pre-provisioned university student directory matching the 5 published records
-// Each provisioned with a unique temporary activation credential and forced password change flag
+// Pre-provisioned university student directory matching the 5 published records (maintained for backwards test compatibility)
 export const STUDENT_USERS: StoredUser[] = [
   {
     id: 'usr_student_101',
@@ -121,9 +132,6 @@ export const STUDENT_USERS: StoredUser[] = [
   },
 ];
 
-// In-memory runtime store for updated passwords
-const DYNAMIC_USER_OVERRIDES = new Map<string, { passwordHash: string; salt: string; mustChangePassword: boolean }>();
-
 /**
  * Creates a cryptographically signed session token:
  * format: base64url(payload).base64url(hmacSignature)
@@ -136,6 +144,7 @@ export function createSessionToken(user: AuthUser, expiresInHours = 24): string 
     role: user.role,
     studentRegNo: user.studentRegNo,
     mustChangePassword: user.mustChangePassword,
+    passwordVersion: user.passwordVersion ?? 1,
     exp: Math.floor(Date.now() / 1000) + expiresInHours * 3600,
     iat: Math.floor(Date.now() / 1000),
   };
@@ -179,36 +188,35 @@ export function verifySessionToken(token: string): AuthUser | null {
       role: payload.role,
       studentRegNo: payload.studentRegNo,
       mustChangePassword: payload.mustChangePassword,
+      passwordVersion: payload.passwordVersion,
     };
-  } catch (err) {
+  } catch {
     return null;
   }
 }
 
 /**
- * Authenticates user credentials against institutional accounts or student directory.
+ * Authenticates user credentials against the persistent backend userStore.
+ * Enforces account active check and scrypt verification.
  */
 export async function authenticateCredentials(
   email: string,
   password: string
 ): Promise<{ user: AuthUser; token: string }> {
   const normalizedEmail = email.trim().toLowerCase();
-  const allUsers = [...INSTITUTIONAL_USERS, ...STUDENT_USERS];
-  const stored = allUsers.find((u) => u.email.toLowerCase() === normalizedEmail);
+  const stored = await userStore.getUserByEmail(normalizedEmail);
 
   if (!stored) {
     throw new AuthError(401, 'Invalid credentials');
   }
 
-  // Check for dynamic runtime password override
-  const override = DYNAMIC_USER_OVERRIDES.get(stored.id);
-  const activeSalt = override ? override.salt : stored.salt;
-  const activeHash = override ? override.passwordHash : stored.passwordHash;
-  const mustChangePassword = override ? override.mustChangePassword : (stored.mustChangePassword ?? false);
+  if (!stored.isActive) {
+    throw new AuthError(403, 'Account is deactivated. Please contact the administrator.');
+  }
 
-  const computedHash = hashPassword(password, activeSalt);
+  const computedHash = hashPassword(password, stored.passwordSalt);
   const hashBuf = Buffer.from(computedHash, 'hex');
-  const storedBuf = Buffer.from(activeHash, 'hex');
+  const storedBuf = Buffer.from(stored.passwordHash, 'hex');
 
   if (hashBuf.length !== storedBuf.length || !timingSafeEqual(hashBuf, storedBuf)) {
     throw new AuthError(401, 'Invalid credentials');
@@ -230,7 +238,9 @@ export async function authenticateCredentials(
     name: stored.name,
     role: stored.role,
     studentRegNo: stored.studentRegNo,
-    mustChangePassword,
+    mustChangePassword: stored.mustChangePassword,
+    isActive: stored.isActive,
+    passwordVersion: stored.passwordVersion,
     publicKey,
   };
 
@@ -239,88 +249,121 @@ export async function authenticateCredentials(
 }
 
 /**
- * Changes a user's password securely, clearing mustChangePassword requirement.
+ * Changes a user's password securely in the persistent backend,
+ * increments passwordVersion to invalidate any active sessions,
+ * and clears mustChangePassword requirement.
  */
 export async function changeUserPassword(
   userId: string,
   currentPassword: string,
   newPassword: string
 ): Promise<{ user: AuthUser; token: string }> {
-  const allUsers = [...INSTITUTIONAL_USERS, ...STUDENT_USERS];
-  const stored = allUsers.find((u) => u.id === userId);
+  const stored = await userStore.getUserById(userId);
   if (!stored) {
     throw new AuthError(404, 'User account not found');
   }
 
-  // Verify current password
-  const override = DYNAMIC_USER_OVERRIDES.get(stored.id);
-  const activeSalt = override ? override.salt : stored.salt;
-  const activeHash = override ? override.passwordHash : stored.passwordHash;
+  if (!stored.isActive) {
+    throw new AuthError(403, 'Account is deactivated');
+  }
 
-  const computedHash = hashPassword(currentPassword, activeSalt);
+  // Verify current password
+  const computedHash = hashPassword(currentPassword, stored.passwordSalt);
   const hashBuf = Buffer.from(computedHash, 'hex');
-  const storedBuf = Buffer.from(activeHash, 'hex');
+  const storedBuf = Buffer.from(stored.passwordHash, 'hex');
 
   if (hashBuf.length !== storedBuf.length || !timingSafeEqual(hashBuf, storedBuf)) {
     throw new AuthError(401, 'Current password is incorrect');
   }
 
-  // Enforce strong password policy
-  if (!newPassword || newPassword.length < 8) {
-    throw new AuthError(400, 'New password must be at least 8 characters long');
-  }
-  if (!/[A-Z]/.test(newPassword) || !/[a-z]/.test(newPassword) || !/[0-9]/.test(newPassword) || !/[^A-Za-z0-9]/.test(newPassword)) {
-    throw new AuthError(400, 'New password must contain uppercase, lowercase, numbers, and special characters');
-  }
   if (newPassword === currentPassword) {
     throw new AuthError(400, 'New password cannot be the same as current password');
   }
 
-  // Generate fresh unique salt and hash
-  const newSalt = randomBytes(16).toString('hex');
-  const newHash = hashPassword(newPassword, newSalt);
+  // Enforce strong password policy (minimum 12 characters, uppercase, lowercase, number, symbol)
+  const validation = validatePasswordStrength(newPassword);
+  if (!validation.valid) {
+    throw new AuthError(400, validation.error || 'Password does not meet complexity requirements');
+  }
 
-  DYNAMIC_USER_OVERRIDES.set(stored.id, {
-    passwordHash: newHash,
-    salt: newSalt,
-    mustChangePassword: false,
-  });
+  // Update in persistent store (clearing mustChangePassword and incrementing passwordVersion)
+  const updatedUser = await userStore.resetUserPassword(userId, newPassword, false);
 
-  const updatedUser: AuthUser = {
-    id: stored.id,
-    email: stored.email,
-    name: stored.name,
-    role: stored.role,
-    studentRegNo: stored.studentRegNo,
+  const authUser: AuthUser = {
+    id: updatedUser.id,
+    email: updatedUser.email,
+    name: updatedUser.name,
+    role: updatedUser.role,
+    studentRegNo: updatedUser.studentRegNo,
     mustChangePassword: false,
+    isActive: updatedUser.isActive,
+    passwordVersion: updatedUser.passwordVersion,
   };
 
-  const token = createSessionToken(updatedUser);
-  return { user: updatedUser, token };
+  const token = createSessionToken(authUser);
+  return { user: authUser, token };
 }
 
 /**
- * Extracts and verifies authenticated user from Request headers (Authorization or Cookie).
+ * Extracts and verifies authenticated user from Request headers (Authorization or Cookie),
+ * checking against the persistent userStore to guarantee account is active and session
+ * has not been invalidated by a password reset.
  */
 export async function getAuthenticatedUser(request: Request): Promise<AuthUser | null> {
+  let token: string | null = null;
+
   // 1. Check Authorization: Bearer <token>
   const authHeader = request.headers.get('authorization') || request.headers.get('Authorization');
   if (authHeader && authHeader.startsWith('Bearer ')) {
-    const token = authHeader.substring(7).trim();
-    const user = verifySessionToken(token);
-    if (user) return user;
+    token = authHeader.substring(7).trim();
   }
 
   // 2. Check Cookie header
-  const cookieHeader = request.headers.get('cookie') || '';
-  const match = cookieHeader.match(/verimark_session=([^;]+)/);
-  if (match) {
-    const token = decodeURIComponent(match[1].trim());
-    const user = verifySessionToken(token);
-    if (user) return user;
+  if (!token) {
+    const cookieHeader = request.headers.get('cookie') || '';
+    const match = cookieHeader.match(/verimark_session=([^;]+)/);
+    if (match) {
+      token = decodeURIComponent(match[1].trim());
+    }
   }
 
-  return null;
+  if (!token) return null;
+
+  const verified = verifySessionToken(token);
+  if (!verified) return null;
+
+  // Cross-verify against persistent database
+  const user = await userStore.getUserById(verified.id);
+  if (!user || !user.isActive) {
+    return null; // Account deleted or deactivated
+  }
+
+  // Session invalidation check: if database passwordVersion > session passwordVersion, session is revoked
+  if (verified.passwordVersion !== undefined && user.passwordVersion > verified.passwordVersion) {
+    return null; // Session invalidated by password change or admin reset
+  }
+
+  let publicKey: string | undefined;
+  if (user.role === 'EXAM_CONTROLLER' || user.role === 'ACADEMIC_DEAN') {
+    const keys = getServerKeys();
+    if (user.role === 'EXAM_CONTROLLER') {
+      publicKey = keys.approver1.publicKey;
+    } else if (user.role === 'ACADEMIC_DEAN') {
+      publicKey = keys.approver2.publicKey;
+    }
+  }
+
+  return {
+    id: user.id,
+    email: user.email,
+    name: user.name,
+    role: user.role,
+    studentRegNo: user.studentRegNo,
+    mustChangePassword: user.mustChangePassword,
+    isActive: user.isActive,
+    passwordVersion: user.passwordVersion,
+    publicKey,
+  };
 }
 
 /**
@@ -352,10 +395,14 @@ export async function requireAuth(
  * Helper to generate pre-authenticated demo tokens for testing and evaluation.
  */
 export function getDemoTokenForRole(role: UserRole, studentRegNo?: string): { user: AuthUser; token: string } {
+  const users = loadLocalUsers();
   if (role === 'STUDENT') {
     const student = studentRegNo
-      ? STUDENT_USERS.find((s) => s.studentRegNo === studentRegNo) || STUDENT_USERS[0]
-      : STUDENT_USERS[0];
+      ? users.find((s) => s.studentRegNo === studentRegNo && s.role === 'STUDENT') ||
+        users.find((s) => s.role === 'STUDENT') ||
+        STUDENT_USERS[0]
+      : users.find((s) => s.role === 'STUDENT') || STUDENT_USERS[0];
+
     const user: AuthUser = {
       id: student.id,
       email: student.email,
@@ -363,11 +410,13 @@ export function getDemoTokenForRole(role: UserRole, studentRegNo?: string): { us
       role: 'STUDENT',
       studentRegNo: student.studentRegNo,
       mustChangePassword: student.mustChangePassword,
+      isActive: student.isActive ?? true,
+      passwordVersion: student.passwordVersion ?? 1,
     };
     return { user, token: createSessionToken(user) };
   }
 
-  const userRecord = INSTITUTIONAL_USERS.find((u) => u.role === role);
+  const userRecord = users.find((u) => u.role === role) || INSTITUTIONAL_USERS.find((u) => u.role === role);
   if (!userRecord) {
     throw new Error(`Unknown role ${role}`);
   }
@@ -376,6 +425,8 @@ export function getDemoTokenForRole(role: UserRole, studentRegNo?: string): { us
     email: userRecord.email,
     name: userRecord.name,
     role: userRecord.role,
+    isActive: userRecord.isActive ?? true,
+    passwordVersion: userRecord.passwordVersion ?? 1,
   };
   return { user, token: createSessionToken(user) };
 }
@@ -383,27 +434,19 @@ export function getDemoTokenForRole(role: UserRole, studentRegNo?: string): { us
 /**
  * Returns list of public demo accounts for the UI switcher.
  */
-export function getAvailableDemoAccounts(): {
+export async function getAvailableDemoAccounts(): Promise<{
   email: string;
   name: string;
   role: UserRole;
   studentRegNo?: string;
   type: 'INSTITUTIONAL' | 'STUDENT';
-}[] {
-  const inst = INSTITUTIONAL_USERS.map((u) => ({
+}[]> {
+  const users = await userStore.getAllUsers();
+  return users.map((u) => ({
     email: u.email,
-    name: u.name,
-    role: u.role,
-    type: 'INSTITUTIONAL' as const,
-  }));
-
-  const stud = STUDENT_USERS.map((u) => ({
-    email: u.email,
-    name: `${u.name} (${u.studentRegNo})`,
+    name: u.role === 'STUDENT' ? `${u.name} (${u.studentRegNo})` : u.name,
     role: u.role,
     studentRegNo: u.studentRegNo,
-    type: 'STUDENT' as const,
+    type: u.role === 'STUDENT' ? 'STUDENT' : 'INSTITUTIONAL',
   }));
-
-  return [...inst, ...stud];
 }

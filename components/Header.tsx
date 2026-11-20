@@ -9,14 +9,18 @@ import {
   GraduationCap,
   LogIn,
   Key,
+  Menu,
+  X,
 } from 'lucide-react';
 import { AuthUser } from '@/lib/types';
 import Link from 'next/link';
+import { useNav } from './NavContext';
 
 export default function Header({ title, subtitle }: { title: string; subtitle?: string }) {
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const { toggleMobileMenu, mobileMenuOpen } = useNav();
 
   const fetchSession = async () => {
     try {
@@ -52,9 +56,18 @@ export default function Header({ title, subtitle }: { title: string; subtitle?: 
 
   return (
     <header className="h-16 border-b border-[#1c2b50] bg-[#0b132b]/80 backdrop-blur-md px-4 sm:px-8 flex items-center justify-between sticky top-0 z-30">
-      <div>
-        <h1 className="text-base sm:text-lg font-bold text-white tracking-tight">{title}</h1>
-        {subtitle && <p className="text-xs text-slate-400 hidden sm:block">{subtitle}</p>}
+      <div className="flex items-center space-x-3">
+        <button
+          onClick={toggleMobileMenu}
+          className="md:hidden p-2 rounded-lg bg-[#111c38] border border-[#1c2b50] text-slate-300 hover:text-white transition-colors"
+          aria-label="Toggle navigation menu"
+        >
+          {mobileMenuOpen ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
+        </button>
+        <div>
+          <h1 className="text-sm sm:text-base md:text-lg font-bold text-white tracking-tight truncate max-w-[200px] sm:max-w-md md:max-w-xl">{title}</h1>
+          {subtitle && <p className="text-xs text-slate-400 hidden sm:block truncate max-w-lg">{subtitle}</p>}
+        </div>
       </div>
 
       <div className="flex items-center space-x-3">
