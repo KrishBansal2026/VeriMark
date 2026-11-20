@@ -1,14 +1,17 @@
 import { dbService } from '../storage/db';
 import { getLatestIndependentCheckpoint } from '../storage/independentCheckpointStore';
-import { computeResultRecordHash, hashLeaf } from '../crypto/sha256';
+import { computeResultRecordHash, hashLeaf, sha256, canonicalizeJson } from '../crypto/sha256';
 import { MerkleTree } from '../crypto/merkle';
 import { verifyCheckpoint } from '../crypto/ed25519';
 import { SystemAuditReport, TamperAuditFinding } from '../types';
 
 /**
  * Performs a comprehensive cryptographic integrity audit of the entire database.
- * Recomputes all hashes from raw database records, verifies the Merkle tree,
- * checks Ed25519 signatures, and verifies against independently authenticated checkpoints.
+ * Phase 5 Remediation:
+ * - Recomputes all hashes from raw database records.
+ * - Reconstructs the Merkle tree and cross-checks with signed checkpoints.
+ * - Validates the complete append-only ledger event hash chain.
+ * - Detects deleted, replaced, or modified events.
  */
 export async function performSystemAudit(): Promise<SystemAuditReport> {
   const auditedAt = new Date().toISOString();
@@ -19,6 +22,7 @@ export async function performSystemAudit(): Promise<SystemAuditReport> {
 
   const findings: TamperAuditFinding[] = [];
   let databaseTamperDetected = false;
+  let eventChainIntegrity = true;
 
   // 1. Recalculate hash for each record and compare with stored record_hash
   for (const record of publishedResults) {
@@ -112,9 +116,102 @@ export async function performSystemAudit(): Promise<SystemAuditReport> {
     }
   }
 
-  // Overall status
+  // 4. Phase 5: Complete Ledger Event Chain Integrity Verification
+  const events = await dbService.getLedgerEvents();
+
+  if (independentCheckpoint && events.length !== independentCheckpoint.eventCount) {
+    eventChainIntegrity = false;
+    findings.push({
+      recordId: 'event_stream_count',
+      studentRegNo: 'ALL',
+      studentName: 'SYSTEM',
+      subject: 'EVENT_CHAIN',
+      expectedHash: `Count: ${independentCheckpoint.eventCount}`,
+      actualCalculatedHash: `Count: ${events.length}`,
+      tamperedFields: ['eventCount'],
+      severity: 'CRITICAL',
+      details: `Event count mismatch! Authenticated checkpoint expects ${independentCheckpoint.eventCount} events, but database has ${events.length} events. Events may have been deleted or inserted.`,
+    });
+  }
+
+  let runningPrevHash = '0000000000000000000000000000000000000000000000000000000000000000';
+  for (let i = 0; i < events.length; i++) {
+    const e = events[i];
+
+    // Monotonic continuous sequence check
+    if (e.sequenceNumber !== i + 1) {
+      eventChainIntegrity = false;
+      findings.push({
+        recordId: e.id,
+        studentRegNo: e.studentRegNo,
+        studentName: 'SYSTEM',
+        subject: 'EVENT_SEQUENCE',
+        expectedHash: `Seq #${i + 1}`,
+        actualCalculatedHash: `Seq #${e.sequenceNumber}`,
+        tamperedFields: ['sequenceNumber'],
+        severity: 'CRITICAL',
+        details: `Discontinuous event sequence at index ${i}! Expected #${i + 1}, found #${e.sequenceNumber}.`,
+      });
+    }
+
+    // Previous event hash chaining check
+    if (e.prevEventHash.toLowerCase() !== runningPrevHash.toLowerCase()) {
+      eventChainIntegrity = false;
+      findings.push({
+        recordId: e.id,
+        studentRegNo: e.studentRegNo,
+        studentName: 'SYSTEM',
+        subject: 'EVENT_HASH_CHAIN',
+        expectedHash: runningPrevHash,
+        actualCalculatedHash: e.prevEventHash,
+        tamperedFields: ['prevEventHash'],
+        severity: 'CRITICAL',
+        details: `Broken ledger event hash chain at event #${e.sequenceNumber}! Previous event hash does not match preceding event hash.`,
+      });
+    }
+
+    // Payload canonical hash check
+    const expectedPayloadHash = sha256(canonicalizeJson(e.payload));
+    if (e.payloadHash.toLowerCase() !== expectedPayloadHash.toLowerCase()) {
+      eventChainIntegrity = false;
+      findings.push({
+        recordId: e.id,
+        studentRegNo: e.studentRegNo,
+        studentName: 'SYSTEM',
+        subject: 'EVENT_PAYLOAD',
+        expectedHash: expectedPayloadHash,
+        actualCalculatedHash: e.payloadHash,
+        tamperedFields: ['payloadHash'],
+        severity: 'CRITICAL',
+        details: `Tampered payload in ledger event #${e.sequenceNumber}! Computed payload hash does not match stored payloadHash.`,
+      });
+    }
+
+    // Recomputed event hash check
+    const expectedEventHash = sha256(
+      `${e.sequenceNumber}:${e.eventType}:${e.recordId}:${e.payloadHash}:${e.prevEventHash}`
+    );
+    if (e.eventHash.toLowerCase() !== expectedEventHash.toLowerCase()) {
+      eventChainIntegrity = false;
+      findings.push({
+        recordId: e.id,
+        studentRegNo: e.studentRegNo,
+        studentName: 'SYSTEM',
+        subject: 'EVENT_HASH',
+        expectedHash: expectedEventHash,
+        actualCalculatedHash: e.eventHash,
+        tamperedFields: ['eventHash'],
+        severity: 'CRITICAL',
+        details: `Corrupted ledger event hash at event #${e.sequenceNumber}!`,
+      });
+    }
+
+    runningPrevHash = e.eventHash;
+  }
+
+  // Determine overall status
   let overallStatus: SystemAuditReport['overallStatus'] = 'SECURE';
-  if (databaseTamperDetected) {
+  if (databaseTamperDetected || !eventChainIntegrity) {
     overallStatus = 'TAMPER_DETECTED';
   } else if (!ledgerIntegrity) {
     overallStatus = 'CHECKPOINT_MISMATCH';
@@ -128,6 +225,7 @@ export async function performSystemAudit(): Promise<SystemAuditReport> {
     publishedCount: publishedResults.length,
     tamperedCount: findings.length,
     ledgerIntegrity,
+    eventChainIntegrity,
     independentCheckpointVerified,
     activeCheckpoint: independentCheckpoint || undefined,
     findings,

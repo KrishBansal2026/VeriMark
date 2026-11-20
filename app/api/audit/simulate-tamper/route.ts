@@ -1,9 +1,13 @@
 import { NextResponse } from 'next/server';
 import { dbService } from '@/lib/storage/db';
+import { requireAuth, AuthError } from '@/lib/server/auth';
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
+    // Phase 1: Authentication & Authorization (Admin or Auditor)
+    await requireAuth(request, ['ADMIN', 'AUDITOR']);
+
+    const body = await request.json().catch(() => ({}));
     const results = await dbService.getPublishedResults();
 
     if (results.length === 0) {
@@ -19,7 +23,7 @@ export async function POST(request: Request) {
 
     const newMarks = body.newMarks !== undefined ? Number(body.newMarks) : 99.5;
 
-    // Direct malicious database modification: modifies the marks without updating hash or ledger
+    // Direct malicious database modification simulation
     const tampered = await dbService.directTamperResult(target.id, 'marksObtained', newMarks);
 
     return NextResponse.json({
@@ -28,6 +32,9 @@ export async function POST(request: Request) {
       tamperedRecord: tampered,
     });
   } catch (error: any) {
+    if (error instanceof AuthError) {
+      return NextResponse.json({ success: false, error: error.message }, { status: error.statusCode });
+    }
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }

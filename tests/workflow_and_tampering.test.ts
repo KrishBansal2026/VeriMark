@@ -2,8 +2,13 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { dbService } from '../lib/storage/db';
 import { performSystemAudit } from '../lib/audit/tamperDetector';
 import { verifyResultCryptographically } from '../lib/audit/publicVerifier';
+import { getDemoTokenForRole } from '../lib/server/auth';
 
 describe('Workflow, Dual Approvals, and Tamper Detection Tests', () => {
+  const adminUser = getDemoTokenForRole('ADMIN').user;
+  const controllerUser = getDemoTokenForRole('EXAM_CONTROLLER').user;
+  const deanUser = getDemoTokenForRole('ACADEMIC_DEAN').user;
+
   beforeEach(async () => {
     dbService.resetForTesting();
     await dbService.seedInitialData();
@@ -63,7 +68,7 @@ describe('Workflow, Dual Approvals, and Tamper Detection Tests', () => {
           resultId: target.id,
           proposedMarks: 95,
           reason: '   ',
-          requesterName: 'Admin',
+          requester: adminUser,
         })
       ).rejects.toThrow(/mandatory correction reason/i);
     });
@@ -77,15 +82,15 @@ describe('Workflow, Dual Approvals, and Tamper Detection Tests', () => {
         resultId: target.id,
         proposedMarks: originalMarks + 5,
         reason: 'Recounting of question 4 yielded additional marks',
-        requesterName: 'Exam Admin',
+        requester: adminUser,
       });
 
       expect(req.status).toBe('pending_approvals');
 
-      // Approver 1 signs
+      // Approver 1 (Controller) signs
       const step1 = await dbService.submitCorrectionApproval({
         requestId: req.id,
-        approverRole: 'EXAM_CONTROLLER',
+        authUser: controllerUser,
         comments: 'Recount verified with physical answer script',
       });
 
@@ -96,18 +101,18 @@ describe('Workflow, Dual Approvals, and Tamper Detection Tests', () => {
       const currentResult = await dbService.getResultById(target.id);
       expect(currentResult?.marksObtained).toBe(originalMarks);
 
-      // Attempt duplicate approval by the same role (should fail!)
+      // Attempt duplicate approval by the same user (should fail!)
       await expect(
         dbService.submitCorrectionApproval({
           requestId: req.id,
-          approverRole: 'EXAM_CONTROLLER',
+          authUser: controllerUser,
         })
       ).rejects.toThrow(/already signed/i);
 
       // Approver 2 (Academic Dean) signs
       const step2 = await dbService.submitCorrectionApproval({
         requestId: req.id,
-        approverRole: 'ACADEMIC_DEAN',
+        authUser: deanUser,
         comments: 'Approved under ordinance 4.2',
       });
 

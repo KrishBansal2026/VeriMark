@@ -4,6 +4,16 @@
 
 export type ResultStatus = 'draft' | 'published' | 'corrected' | 'revoked';
 
+export type UserRole = 'ADMIN' | 'EXAM_CONTROLLER' | 'ACADEMIC_DEAN' | 'AUDITOR';
+
+export interface AuthUser {
+  id: string;
+  email: string;
+  name: string;
+  role: UserRole;
+  publicKey?: string;
+}
+
 export interface StudentResult {
   id: string;
   studentRegNo: string;
@@ -89,6 +99,7 @@ export type ApproverRole = 'EXAM_CONTROLLER' | 'ACADEMIC_DEAN';
 export interface CorrectionApproval {
   id: string;
   requestId: string;
+  approverUserId: string;   // Verified authenticated user ID
   approverName: string;
   approverRole: ApproverRole;
   approverPublicKey: string;
@@ -109,6 +120,7 @@ export interface CorrectionRequest {
   proposedHash: string;
   reason: string;
   status: CorrectionRequestStatus;
+  requesterUserId: string;  // Verified user ID who requested correction
   requesterName: string;
   approvals: CorrectionApproval[];
   createdAt: string;
@@ -138,6 +150,7 @@ export interface VerificationResult {
     reason: string;
     resolvedAt?: string;
     approvals: {
+      userId: string;
       role: ApproverRole;
       name: string;
       approvedAt: string;
@@ -165,6 +178,7 @@ export interface SystemAuditReport {
   publishedCount: number;
   tamperedCount: number;
   ledgerIntegrity: boolean;
+  eventChainIntegrity: boolean;
   independentCheckpointVerified: boolean;
   activeCheckpoint?: LedgerCheckpoint;
   findings: TamperAuditFinding[];

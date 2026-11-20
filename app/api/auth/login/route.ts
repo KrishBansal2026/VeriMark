@@ -1,0 +1,58 @@
+import { NextResponse } from 'next/server';
+import { authenticateCredentials, getDemoTokenForRole } from '@/lib/server/auth';
+import { UserRole } from '@/lib/types';
+
+export async function POST(request: Request) {
+  try {
+    const body = await request.json();
+
+    // Support quick demo role switch or credentials
+    if (body.demoRole) {
+      const demoAuth = getDemoTokenForRole(body.demoRole as UserRole);
+      const response = NextResponse.json({
+        success: true,
+        user: demoAuth.user,
+        token: demoAuth.token,
+      });
+
+      // Set HTTP-Only session cookie
+      response.cookies.set('verimark_session', demoAuth.token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        path: '/',
+        maxAge: 86400, // 24 hours
+      });
+
+      return response;
+    }
+
+    if (!body.email || !body.password) {
+      return NextResponse.json(
+        { success: false, error: 'Email and password are required' },
+        { status: 400 }
+      );
+    }
+
+    const { user, token } = await authenticateCredentials(body.email, body.password);
+
+    const response = NextResponse.json({
+      success: true,
+      user,
+      token,
+    });
+
+    response.cookies.set('verimark_session', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 86400,
+    });
+
+    return response;
+  } catch (error: any) {
+    const status = error.statusCode || 401;
+    return NextResponse.json({ success: false, error: error.message }, { status });
+  }
+}

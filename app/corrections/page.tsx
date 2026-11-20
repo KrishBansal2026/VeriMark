@@ -13,22 +13,32 @@ import {
   ArrowRight,
   RefreshCw,
   Lock,
+  User,
 } from 'lucide-react';
-import { CorrectionRequest, ApproverRole } from '@/lib/types';
+import { CorrectionRequest, ApproverRole, AuthUser } from '@/lib/types';
 
 export default function CorrectionsPage() {
   const [requests, setRequests] = useState<CorrectionRequest[]>([]);
+  const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [signingId, setSigningId] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  const fetchCorrections = async () => {
+  const fetchSessionAndData = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/corrections');
-      const data = await res.json();
-      if (data.success) {
-        setRequests(data.requests);
+      const [corrRes, authRes] = await Promise.all([
+        fetch('/api/corrections'),
+        fetch('/api/auth/me'),
+      ]);
+      const corrData = await corrRes.json();
+      const authData = await authRes.json();
+
+      if (corrData.success) {
+        setRequests(corrData.requests);
+      }
+      if (authData.success) {
+        setCurrentUser(authData.user);
       }
     } catch (err) {
       console.error(err);
@@ -38,19 +48,18 @@ export default function CorrectionsPage() {
   };
 
   useEffect(() => {
-    fetchCorrections();
+    fetchSessionAndData();
   }, []);
 
-  const handleApprove = async (requestId: string, role: ApproverRole) => {
-    setSigningId(`${requestId}_${role}`);
+  const handleApprove = async (requestId: string, roleToSign: ApproverRole) => {
+    setSigningId(`${requestId}_${roleToSign}`);
     setActionMessage(null);
     try {
       const res = await fetch(`/api/corrections/${requestId}/approve`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          approverRole: role,
-          comments: `Cryptographically authorized under statutory regulations as ${role}`,
+          comments: `Cryptographically authorized under statutory regulations by ${currentUser?.name || 'Authorized Signatory'}`,
         }),
       });
       const data = await res.json();
@@ -62,7 +71,7 @@ export default function CorrectionsPage() {
         type: 'success',
         text: data.message,
       });
-      await fetchCorrections();
+      await fetchSessionAndData();
     } catch (err: any) {
       setActionMessage({
         type: 'error',
@@ -77,7 +86,7 @@ export default function CorrectionsPage() {
     <>
       <Header
         title="Two-Person Correction Approval Management"
-        subtitle="Dual Ed25519 digital signature portal for result modifications (Controller of Examinations & Academic Dean)"
+        subtitle="Dual Ed25519 digital signature portal with verified distinct-user session enforcement"
       />
 
       <main className="p-8 space-y-6 max-w-7xl">
@@ -104,22 +113,24 @@ export default function CorrectionsPage() {
           <div className="space-y-1">
             <div className="flex items-center space-x-2">
               <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30">
-                STATUTORY RULE H8-3
+                STRICT FOUR-EYES PRINCIPLE
               </span>
-              <span className="text-xs text-slate-300 font-semibold">Dual Authorization Mandate</span>
+              <span className="text-xs text-slate-300 font-semibold">Dual Identity Mandate</span>
             </div>
             <p className="text-xs text-slate-400 max-w-2xl">
-              Published examination results are immutable to single-user edits. Any alteration requires independent digital review and Ed25519 signing from both the Controller of Examinations and the Dean of Academic Affairs.
+              Published results require two distinct authenticated individuals with roles <span className="text-cyan-300 font-mono">EXAM_CONTROLLER</span> and <span className="text-purple-300 font-mono">ACADEMIC_DEAN</span>. The correction requester is barred from approving.
             </p>
           </div>
 
-          <button
-            onClick={fetchCorrections}
-            className="p-2 rounded-lg border border-[#1c2b50] bg-[#0b132b] text-slate-400 hover:text-white shrink-0 self-start md:self-auto"
-            title="Refresh requests"
-          >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          </button>
+          <div className="flex items-center space-x-2 self-start md:self-auto shrink-0">
+            <button
+              onClick={fetchSessionAndData}
+              className="p-2 rounded-lg border border-[#1c2b50] bg-[#0b132b] text-slate-400 hover:text-white"
+              title="Refresh requests"
+            >
+              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            </button>
+          </div>
         </div>
 
         {/* Requests List */}
@@ -138,8 +149,10 @@ export default function CorrectionsPage() {
             </div>
           ) : (
             requests.map((req) => {
-              const hasExamController = req.approvals.some((a) => a.approverRole === 'EXAM_CONTROLLER');
-              const hasAcademicDean = req.approvals.some((a) => a.approverRole === 'ACADEMIC_DEAN');
+              const controllerApproval = req.approvals.find((a) => a.approverRole === 'EXAM_CONTROLLER');
+              const deanApproval = req.approvals.find((a) => a.approverRole === 'ACADEMIC_DEAN');
+
+              const isCurrentUserRequester = Boolean(currentUser && req.requesterUserId === currentUser.id);
 
               return (
                 <div
@@ -155,7 +168,7 @@ export default function CorrectionsPage() {
                         <span className="text-slate-400 text-xs">• {req.subject}</span>
                       </div>
                       <p className="text-xs text-slate-400">
-                        Requested by <span className="text-slate-300 font-medium">{req.requesterName}</span> on{' '}
+                        Requested by <span className="text-slate-200 font-semibold">{req.requesterName}</span> on{' '}
                         {new Date(req.createdAt).toLocaleString()}
                       </p>
                     </div>
@@ -210,13 +223,18 @@ export default function CorrectionsPage() {
                       <p className="text-slate-200 leading-relaxed italic">
                         "{req.reason}"
                       </p>
+                      {isCurrentUserRequester && (
+                        <p className="text-[11px] text-amber-400 font-semibold pt-1">
+                          ⚠️ You requested this correction. As per institutional rules, you cannot approve your own request.
+                        </p>
+                      )}
                     </div>
                   </div>
 
                   {/* Dual Signer Action Cards */}
                   <div className="space-y-3 pt-2">
                     <div className="text-xs font-semibold text-slate-300 uppercase tracking-wider text-[10px]">
-                      Required Independent Signatories (2 of 2)
+                      Required Distinct Signatories (2 of 2)
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -227,36 +245,49 @@ export default function CorrectionsPage() {
                             <span className="text-xs font-bold text-white">
                               Dr. Robert Vance
                             </span>
-                            {hasExamController ? (
+                            {controllerApproval ? (
                               <span className="inline-flex items-center space-x-1 text-[10px] text-emerald-400 font-semibold">
                                 <CheckCircle2 className="w-3.5 h-3.5" />
-                                <span>Signed</span>
+                                <span>Signed (User: {controllerApproval.approverUserId})</span>
                               </span>
                             ) : (
                               <span className="inline-flex items-center space-x-1 text-[10px] text-amber-400 font-semibold">
                                 <Clock className="w-3.5 h-3.5" />
-                                <span>Pending</span>
+                                <span>Pending Approval</span>
                               </span>
                             )}
                           </div>
-                          <p className="text-[11px] text-slate-400">Controller of Examinations</p>
+                          <p className="text-[11px] text-slate-400">Controller of Examinations (EXAM_CONTROLLER)</p>
                         </div>
 
-                        {hasExamController ? (
-                          <div className="text-[10px] font-mono text-slate-500 bg-[#0b132b] p-2 rounded border border-[#1c2b50]/60">
-                            Sig: {req.approvals.find((a) => a.approverRole === 'EXAM_CONTROLLER')?.signature.substring(0, 32)}...
+                        {controllerApproval ? (
+                          <div className="text-[10px] font-mono text-slate-400 bg-[#0b132b] p-2 rounded border border-[#1c2b50]/60 space-y-1">
+                            <div>Signer: {controllerApproval.approverName}</div>
+                            <div className="text-[9px] text-slate-500 break-all">
+                              Sig: {controllerApproval.signature.substring(0, 32)}...
+                            </div>
                           </div>
                         ) : (
                           <button
                             onClick={() => handleApprove(req.id, 'EXAM_CONTROLLER')}
-                            disabled={signingId !== null}
-                            className="w-full py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold flex items-center justify-center space-x-2 transition-all shadow-md shadow-blue-600/20 disabled:opacity-50"
+                            disabled={
+                              signingId !== null ||
+                              currentUser?.role !== 'EXAM_CONTROLLER' ||
+                              isCurrentUserRequester
+                            }
+                            className={`w-full py-2 rounded-lg text-xs font-semibold flex items-center justify-center space-x-2 transition-all shadow-md ${
+                              currentUser?.role === 'EXAM_CONTROLLER' && !isCurrentUserRequester
+                                ? 'bg-blue-600 hover:bg-blue-500 text-white shadow-blue-600/20'
+                                : 'bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed'
+                            }`}
                           >
                             <Key className="w-3.5 h-3.5" />
                             <span>
                               {signingId === `${req.id}_EXAM_CONTROLLER`
                                 ? 'Signing with Ed25519...'
-                                : 'Sign as Exam Controller'}
+                                : currentUser?.role === 'EXAM_CONTROLLER'
+                                ? 'Sign as Exam Controller'
+                                : 'Switch to Dr. Vance to Sign'}
                             </span>
                           </button>
                         )}
@@ -269,36 +300,49 @@ export default function CorrectionsPage() {
                             <span className="text-xs font-bold text-white">
                               Prof. Margaret Hamilton
                             </span>
-                            {hasAcademicDean ? (
+                            {deanApproval ? (
                               <span className="inline-flex items-center space-x-1 text-[10px] text-emerald-400 font-semibold">
                                 <CheckCircle2 className="w-3.5 h-3.5" />
-                                <span>Signed</span>
+                                <span>Signed (User: {deanApproval.approverUserId})</span>
                               </span>
                             ) : (
                               <span className="inline-flex items-center space-x-1 text-[10px] text-amber-400 font-semibold">
                                 <Clock className="w-3.5 h-3.5" />
-                                <span>Pending</span>
+                                <span>Pending Approval</span>
                               </span>
                             )}
                           </div>
-                          <p className="text-[11px] text-slate-400">Dean of Academic Affairs</p>
+                          <p className="text-[11px] text-slate-400">Dean of Academic Affairs (ACADEMIC_DEAN)</p>
                         </div>
 
-                        {hasAcademicDean ? (
-                          <div className="text-[10px] font-mono text-slate-500 bg-[#0b132b] p-2 rounded border border-[#1c2b50]/60">
-                            Sig: {req.approvals.find((a) => a.approverRole === 'ACADEMIC_DEAN')?.signature.substring(0, 32)}...
+                        {deanApproval ? (
+                          <div className="text-[10px] font-mono text-slate-400 bg-[#0b132b] p-2 rounded border border-[#1c2b50]/60 space-y-1">
+                            <div>Signer: {deanApproval.approverName}</div>
+                            <div className="text-[9px] text-slate-500 break-all">
+                              Sig: {deanApproval.signature.substring(0, 32)}...
+                            </div>
                           </div>
                         ) : (
                           <button
                             onClick={() => handleApprove(req.id, 'ACADEMIC_DEAN')}
-                            disabled={signingId !== null}
-                            className="w-full py-2 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold flex items-center justify-center space-x-2 transition-all shadow-md shadow-purple-600/20 disabled:opacity-50"
+                            disabled={
+                              signingId !== null ||
+                              currentUser?.role !== 'ACADEMIC_DEAN' ||
+                              isCurrentUserRequester
+                            }
+                            className={`w-full py-2 rounded-lg text-xs font-semibold flex items-center justify-center space-x-2 transition-all shadow-md ${
+                              currentUser?.role === 'ACADEMIC_DEAN' && !isCurrentUserRequester
+                                ? 'bg-purple-600 hover:bg-purple-500 text-white shadow-purple-600/20'
+                                : 'bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed'
+                            }`}
                           >
                             <Key className="w-3.5 h-3.5" />
                             <span>
                               {signingId === `${req.id}_ACADEMIC_DEAN`
                                 ? 'Signing with Ed25519...'
-                                : 'Sign as Academic Dean'}
+                                : currentUser?.role === 'ACADEMIC_DEAN'
+                                ? 'Sign as Academic Dean'
+                                : 'Switch to Prof. Hamilton to Sign'}
                             </span>
                           </button>
                         )}

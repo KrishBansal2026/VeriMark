@@ -7,17 +7,20 @@ import {
   CorrectionRequest,
   CorrectionApproval,
   ApproverRole,
+  AuthUser,
 } from '../types';
-import { computeResultRecordHash, hashLeaf, sha256 } from '../crypto/sha256';
+import { computeResultRecordHash, hashLeaf, sha256, canonicalizeJson } from '../crypto/sha256';
 import { MerkleTree } from '../crypto/merkle';
 import {
   createSignedCheckpoint,
   verifyWithEd25519,
   signWithEd25519,
+  verifyCheckpoint,
 } from '../crypto/ed25519';
 import { getServerKeys } from '../server/keys';
 import {
   commitIndependentCheckpoint,
+  getLatestIndependentCheckpoint,
   resetIndependentStoreForTesting,
 } from './independentCheckpointStore';
 
@@ -39,9 +42,11 @@ function ensureDbFile(): DatabaseSchema {
   if (fs.existsSync(DB_FILE)) {
     try {
       const data = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
-      return data;
+      if (data && Array.isArray(data.results)) {
+        return data;
+      }
     } catch (err) {
-      console.error('Error reading db file:', err);
+      // In case of transient read error
     }
   }
 
@@ -74,7 +79,6 @@ export async function commitLedgerCheckpoint(): Promise<LedgerCheckpoint> {
     (r) => r.status === 'published' || r.status === 'corrected'
   );
 
-  // Compute leaf hashes in deterministic order by registration number + subject
   publishedResults.sort((a, b) =>
     `${a.studentRegNo}_${a.subject}`.localeCompare(`${b.studentRegNo}_${b.subject}`)
   );
@@ -83,7 +87,6 @@ export async function commitLedgerCheckpoint(): Promise<LedgerCheckpoint> {
   const tree = new MerkleTree(leafRecordHashes);
   const merkleRoot = tree.getRoot();
 
-  // Update merkle indices on the records
   publishedResults.forEach((r, idx) => {
     r.merkleIndex = idx;
     r.merkleLeafHash = hashLeaf(r.recordHash);
@@ -111,12 +114,10 @@ export async function commitLedgerCheckpoint(): Promise<LedgerCheckpoint> {
     keys.ledgerAuthority.publicKey
   );
 
-  // Associate checkpoint ID with results
   publishedResults.forEach((r) => {
     r.checkpointId = checkpoint.id;
   });
 
-  // Save to DB and independent store
   db.checkpoints.push(checkpoint);
   saveDb(db);
 
@@ -145,7 +146,7 @@ export function appendLedgerEvent(
     : '0000000000000000000000000000000000000000000000000000000000000000';
 
   const sequenceNumber = (prevEvent?.sequenceNumber || 0) + 1;
-  const payloadHash = sha256(JSON.stringify(payload));
+  const payloadHash = sha256(canonicalizeJson(payload));
   const eventHash = sha256(
     `${sequenceNumber}:${eventType}:${recordId}:${payloadHash}:${prevEventHash}`
   );
@@ -338,7 +339,7 @@ export const dbService = {
     resultId: string;
     proposedMarks: number;
     reason: string;
-    requesterName: string;
+    requester: AuthUser;
   }): Promise<CorrectionRequest> => {
     const db = ensureDbFile();
     const result = db.results.find((r) => r.id === params.resultId);
@@ -377,7 +378,8 @@ export const dbService = {
       proposedHash,
       reason: params.reason.trim(),
       status: 'pending_approvals',
-      requesterName: params.requesterName || 'Academic Administrator',
+      requesterUserId: params.requester.id,
+      requesterName: params.requester.name,
       approvals: [],
       createdAt: new Date().toISOString(),
     };
@@ -389,7 +391,7 @@ export const dbService = {
 
   submitCorrectionApproval: async (params: {
     requestId: string;
-    approverRole: ApproverRole;
+    authUser: AuthUser;
     comments?: string;
   }): Promise<{ request: CorrectionRequest; applied: boolean }> => {
     const db = ensureDbFile();
@@ -402,31 +404,52 @@ export const dbService = {
       throw new Error(`Request is already ${request.status}`);
     }
 
-    const alreadyApprovedByRole = request.approvals.some(
-      (a) => a.approverRole === params.approverRole
+    const user = params.authUser;
+
+    if (user.role !== 'EXAM_CONTROLLER' && user.role !== 'ACADEMIC_DEAN') {
+      throw new Error(
+        `Role '${user.role}' is not authorized to sign correction approvals. Required: EXAM_CONTROLLER or ACADEMIC_DEAN`
+      );
+    }
+    const approverRole: ApproverRole = user.role;
+
+    if (request.requesterUserId === user.id) {
+      throw new Error('Conflict of interest: the user who requested this correction cannot approve it');
+    }
+
+    const alreadyApprovedByThisUser = request.approvals.some(
+      (a) => a.approverUserId === user.id
     );
-    if (alreadyApprovedByRole) {
-      throw new Error(`Role ${params.approverRole} has already signed this correction request`);
+    if (alreadyApprovedByThisUser) {
+      throw new Error(`User '${user.name}' (${user.id}) has already signed this correction request`);
+    }
+
+    const alreadyApprovedRole = request.approvals.some(
+      (a) => a.approverRole === approverRole
+    );
+    if (alreadyApprovedRole) {
+      throw new Error(`Role '${approverRole}' has already been signed for this correction request`);
     }
 
     const keys = getServerKeys();
-    const approverInfo =
-      params.approverRole === 'EXAM_CONTROLLER' ? keys.approver1 : keys.approver2;
+    const approverKeyInfo =
+      approverRole === 'EXAM_CONTROLLER' ? keys.approver1 : keys.approver2;
 
-    const signPayload = `${request.id}:${request.proposedHash}:${params.approverRole}`;
-    const signature = signWithEd25519(signPayload, approverInfo.privateKey);
+    const signPayload = `${request.id}:${request.proposedHash}:${approverRole}:${user.id}`;
+    const signature = signWithEd25519(signPayload, approverKeyInfo.privateKey);
 
-    const isSigValid = verifyWithEd25519(signPayload, approverInfo.publicKey, signature);
+    const isSigValid = verifyWithEd25519(signPayload, approverKeyInfo.publicKey, signature);
     if (!isSigValid) {
       throw new Error('Cryptographic signature verification failed on backend');
     }
 
     const approval: CorrectionApproval = {
-      id: `appr_${Date.now()}_${params.approverRole.toLowerCase()}`,
+      id: `appr_${Date.now()}_${approverRole.toLowerCase()}`,
       requestId: request.id,
-      approverName: approverInfo.name,
-      approverRole: params.approverRole,
-      approverPublicKey: approverInfo.publicKey,
+      approverUserId: user.id,
+      approverName: user.name,
+      approverRole,
+      approverPublicKey: approverKeyInfo.publicKey,
       signature,
       signedPayloadHash: sha256(signPayload),
       comments: params.comments,
@@ -435,12 +458,16 @@ export const dbService = {
 
     request.approvals.push(approval);
 
-    const hasExamController = request.approvals.some((a) => a.approverRole === 'EXAM_CONTROLLER');
-    const hasAcademicDean = request.approvals.some((a) => a.approverRole === 'ACADEMIC_DEAN');
+    const controllerApproval = request.approvals.find((a) => a.approverRole === 'EXAM_CONTROLLER');
+    const deanApproval = request.approvals.find((a) => a.approverRole === 'ACADEMIC_DEAN');
 
     let applied = false;
 
-    if (hasExamController && hasAcademicDean) {
+    if (
+      controllerApproval &&
+      deanApproval &&
+      controllerApproval.approverUserId !== deanApproval.approverUserId
+    ) {
       const result = db.results.find((r) => r.id === request.resultId);
       if (result) {
         result.marksObtained = request.proposedMarks;
@@ -459,7 +486,11 @@ export const dbService = {
           originalMarks: request.originalMarks,
           newMarks: request.proposedMarks,
           reason: request.reason,
-          approvers: request.approvals.map((a) => ({ role: a.approverRole, name: a.approverName })),
+          approvers: request.approvals.map((a) => ({
+            userId: a.approverUserId,
+            role: a.approverRole,
+            name: a.approverName,
+          })),
           recordHash: request.proposedHash,
         });
 
@@ -496,33 +527,122 @@ export const dbService = {
     return result;
   },
 
-  rollbackToLastValidCheckpoint: async (): Promise<{ success: boolean; message: string }> => {
+  directTamperBothMarksAndHashForTest: async (
+    resultId: string,
+    newMarks: number,
+    newHash: string
+  ): Promise<void> => {
     const db = ensureDbFile();
-    const checkpoints = db.checkpoints;
-    if (checkpoints.length === 0) {
-      throw new Error('No valid checkpoint available for rollback');
+    const result = db.results.find((r) => r.id === resultId);
+    if (result) {
+      result.marksObtained = newMarks;
+      result.recordHash = newHash;
+      saveDb(db);
     }
-    const latestCheckpoint = checkpoints[checkpoints.length - 1];
+  },
 
+  deleteResultDirectlyForTest: async (resultId: string): Promise<void> => {
+    const db = ensureDbFile();
+    db.results = db.results.filter((r) => r.id !== resultId);
+    saveDb(db);
+  },
+
+  corruptLedgerEventDirectlyForTest: async (
+    eventIndex: number,
+    corruptedFields: Partial<LedgerEvent>
+  ): Promise<void> => {
+    const db = ensureDbFile();
+    if (db.ledgerEvents[eventIndex]) {
+      Object.assign(db.ledgerEvents[eventIndex], corruptedFields);
+      saveDb(db);
+    }
+  },
+
+  rollbackToLastValidCheckpoint: async (): Promise<{ success: boolean; message: string }> => {
+    const trustedCheckpoint = await getLatestIndependentCheckpoint();
+    if (!trustedCheckpoint) {
+      throw new Error('Rollback failed: No trusted independent checkpoint found in vault');
+    }
+
+    const chkCheck = verifyCheckpoint(trustedCheckpoint);
+    if (!chkCheck.isValid) {
+      throw new Error(`Rollback failed: Trusted checkpoint signature is invalid: ${chkCheck.error}`);
+    }
+
+    const db = ensureDbFile();
     const events = db.ledgerEvents;
-    for (const result of db.results) {
-      const relatedEvents = events.filter((e) => e.recordId === result.id);
-      if (relatedEvents.length > 0) {
-        const latestEvent = relatedEvents[relatedEvents.length - 1];
-        if (latestEvent.payload.marksObtained !== undefined) {
-          result.marksObtained = Number(latestEvent.payload.marksObtained);
+
+    let runningPrevHash = '0000000000000000000000000000000000000000000000000000000000000000';
+    for (let i = 0; i < events.length; i++) {
+      const e = events[i];
+      if (e.sequenceNumber !== i + 1) {
+        throw new Error(`Rollback failed: Non-continuous event sequence at event #${e.sequenceNumber}`);
+      }
+      if (e.prevEventHash.toLowerCase() !== runningPrevHash.toLowerCase()) {
+        throw new Error(`Rollback failed: Broken hash chain at event #${e.sequenceNumber}`);
+      }
+      const expectedPayloadHash = sha256(canonicalizeJson(e.payload));
+      if (e.payloadHash.toLowerCase() !== expectedPayloadHash.toLowerCase()) {
+        throw new Error(`Rollback failed: Tampered event payload at event #${e.sequenceNumber}`);
+      }
+      const expectedEventHash = sha256(
+        `${e.sequenceNumber}:${e.eventType}:${e.recordId}:${e.payloadHash}:${e.prevEventHash}`
+      );
+      if (e.eventHash.toLowerCase() !== expectedEventHash.toLowerCase()) {
+        throw new Error(`Rollback failed: Corrupted event hash at event #${e.sequenceNumber}`);
+      }
+      runningPrevHash = e.eventHash;
+    }
+
+    const reconstructedResultsMap = new Map<string, StudentResult>();
+
+    for (const r of db.results) {
+      reconstructedResultsMap.set(r.id, { ...r });
+    }
+
+    for (const e of events) {
+      if (e.eventType === 'RESULT_PUBLISHED') {
+        const r = reconstructedResultsMap.get(e.recordId);
+        if (r) {
+          r.marksObtained = Number(e.payload.marksObtained);
+          r.recordHash = e.payload.recordHash;
+          r.status = 'published';
         }
-        if (latestEvent.payload.newMarks !== undefined) {
-          result.marksObtained = Number(latestEvent.payload.newMarks);
+      } else if (e.eventType === 'RESULT_CORRECTED') {
+        const r = reconstructedResultsMap.get(e.recordId);
+        if (r) {
+          r.marksObtained = Number(e.payload.newMarks);
+          r.recordHash = e.payload.recordHash;
+          r.status = 'corrected';
         }
-        result.recordHash = latestEvent.payload.recordHash;
       }
     }
 
+    const reconstructedResults = Array.from(reconstructedResultsMap.values());
+    const published = reconstructedResults.filter(
+      (r) => r.status === 'published' || r.status === 'corrected'
+    );
+
+    published.sort((a, b) =>
+      `${a.studentRegNo}_${a.subject}`.localeCompare(`${b.studentRegNo}_${b.subject}`)
+    );
+
+    const reconstructedLeaves = published.map((r) => r.recordHash);
+    const tree = new MerkleTree(reconstructedLeaves);
+    const reconstructedRoot = tree.getRoot();
+
+    if (reconstructedRoot.toLowerCase() !== trustedCheckpoint.merkleRoot.toLowerCase()) {
+      throw new Error(
+        `Rollback failed: Reconstructed Merkle root (${reconstructedRoot.substring(0, 16)}...) does not match authenticated checkpoint root (${trustedCheckpoint.merkleRoot.substring(0, 16)}...)`
+      );
+    }
+
+    db.results = reconstructedResults;
     saveDb(db);
+
     return {
       success: true,
-      message: `State restored to match signed Checkpoint #${latestCheckpoint.sequenceNumber} (${latestCheckpoint.merkleRoot.substring(0, 16)}...)`,
+      message: `State cryptographically restored to match signed Checkpoint #${trustedCheckpoint.sequenceNumber} (${trustedCheckpoint.merkleRoot.substring(0, 16)}...)`,
     };
   },
 

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { dbService } from '@/lib/storage/db';
+import { requireAuth, AuthError } from '@/lib/server/auth';
 
 export async function GET() {
   try {
@@ -12,6 +13,9 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    // Authenticated user (Admin or Institutional Officer)
+    const user = await requireAuth(request, ['ADMIN', 'EXAM_CONTROLLER', 'ACADEMIC_DEAN']);
+
     const body = await request.json();
 
     if (!body.resultId || body.proposedMarks === undefined || !body.reason) {
@@ -25,11 +29,14 @@ export async function POST(request: Request) {
       resultId: body.resultId,
       proposedMarks: Number(body.proposedMarks),
       reason: body.reason,
-      requesterName: body.requesterName || 'Academic Administrator',
+      requester: user,
     });
 
     return NextResponse.json({ success: true, request: newRequest }, { status: 201 });
   } catch (error: any) {
+    if (error instanceof AuthError) {
+      return NextResponse.json({ success: false, error: error.message }, { status: error.statusCode });
+    }
     return NextResponse.json({ success: false, error: error.message }, { status: 400 });
   }
 }

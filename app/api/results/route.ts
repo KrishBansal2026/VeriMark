@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { dbService } from '@/lib/storage/db';
+import { requireAuth, AuthError } from '@/lib/server/auth';
 
 export async function GET() {
   try {
@@ -27,9 +28,11 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    // Phase 1: Authentication & Authorization (Admin only)
+    await requireAuth(request, ['ADMIN']);
+
     const body = await request.json();
 
-    // Server-side validation
     if (!body.studentRegNo || !body.studentName || !body.course || !body.subject || !body.examName) {
       return NextResponse.json(
         { success: false, error: 'All student and examination fields are mandatory' },
@@ -65,6 +68,9 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ success: true, result: newResult }, { status: 201 });
   } catch (error: any) {
+    if (error instanceof AuthError) {
+      return NextResponse.json({ success: false, error: error.message }, { status: error.statusCode });
+    }
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }
