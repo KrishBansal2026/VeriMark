@@ -1,15 +1,18 @@
 import { NextResponse } from 'next/server';
 import { dbService } from '@/lib/storage/db';
 import { requireAuth, AuthError } from '@/lib/server/auth';
+import { resolveTenantContext } from '@/lib/server/tenantContext';
 
 export async function GET(request: Request) {
   try {
-    const user = await requireAuth(request, ['STUDENT', 'ADMIN']);
+    const user = await requireAuth(request, ['STUDENT', 'ADMIN', 'INSTITUTION_ADMIN', 'SUPER_ADMIN']);
 
     const url = new URL(request.url);
     const requestedRegNo = url.searchParams.get('regNo');
+    const requestedInst = url.searchParams.get('institutionId');
 
     let targetRegNo = user.studentRegNo;
+    const instId = user.role === 'SUPER_ADMIN' ? requestedInst || user.institutionId : resolveTenantContext(user, requestedInst);
 
     // Strict Backend Ownership Enforcement
     if (user.role === 'STUDENT') {
@@ -26,7 +29,7 @@ export async function GET(request: Request) {
         );
       }
       targetRegNo = user.studentRegNo;
-    } else if (user.role === 'ADMIN') {
+    } else {
       targetRegNo = requestedRegNo || user.studentRegNo || 'CF2026-CSE-101';
     }
 
@@ -34,7 +37,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ success: false, error: 'Registration number required' }, { status: 400 });
     }
 
-    const corrections = await dbService.getCorrectionHistoryByStudentRegNo(targetRegNo);
+    const corrections = await dbService.getCorrectionHistoryByStudentRegNo(targetRegNo, instId || undefined);
 
     return NextResponse.json({
       success: true,

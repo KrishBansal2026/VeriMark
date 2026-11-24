@@ -3,14 +3,16 @@ import { dbService } from '@/lib/storage/db';
 import { getPublicKeys } from '@/lib/server/keys';
 import { getIndependentCheckpoints } from '@/lib/storage/independentCheckpointStore';
 import { requireAuth, AuthError } from '@/lib/server/auth';
+import { resolveTenantContext } from '@/lib/server/tenantContext';
 
 export async function GET(request: Request): Promise<NextResponse>;
 export async function GET(): Promise<NextResponse>;
 export async function GET(request?: Request): Promise<NextResponse> {
   try {
-    let user = null;
+    let instId: string | undefined = undefined;
+
     if (request) {
-      user = await requireAuth(request, [
+      const user = await requireAuth(request, [
         'ADMIN',
         'INSTITUTION_ADMIN',
         'SUPER_ADMIN',
@@ -18,12 +20,18 @@ export async function GET(request?: Request): Promise<NextResponse> {
         'ACADEMIC_DEAN',
         'AUDITOR',
       ]);
+
+      const url = new URL(request.url);
+      const requestedInst = url.searchParams.get('institutionId');
+
+      if (user.role === 'SUPER_ADMIN') {
+        instId = requestedInst || undefined;
+      } else {
+        instId = resolveTenantContext(user, requestedInst);
+      }
     }
 
     await dbService.seedInitialData();
-
-    const instId =
-      user && user.role !== 'SUPER_ADMIN' ? user.institutionId || 'inst_verimark_01' : undefined;
 
     const events = await dbService.getLedgerEvents(instId);
     const checkpoints = await dbService.getCheckpoints(instId);

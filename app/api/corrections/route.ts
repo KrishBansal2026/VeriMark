@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { dbService } from '@/lib/storage/db';
 import { requireAuth, AuthError } from '@/lib/server/auth';
+import { resolveTenantContext } from '@/lib/server/tenantContext';
 
 export async function GET(request: Request) {
   try {
@@ -15,10 +16,7 @@ export async function GET(request: Request) {
 
     const url = new URL(request.url);
     const requestedInst = url.searchParams.get('institutionId');
-    const instId =
-      user.role === 'SUPER_ADMIN' && requestedInst
-        ? requestedInst
-        : user.institutionId || 'inst_verimark_01';
+    const instId = resolveTenantContext(user, requestedInst);
 
     const requests = await dbService.getCorrectionRequests(instId);
     return NextResponse.json({ success: true, requests });
@@ -49,7 +47,12 @@ export async function POST(request: Request) {
       );
     }
 
-    const instId = user.institutionId || 'inst_verimark_01';
+    const targetResult = await dbService.getResultById(body.resultId);
+    if (!targetResult) {
+      return NextResponse.json({ success: false, error: 'Target result not found' }, { status: 404 });
+    }
+
+    const instId = resolveTenantContext(user, targetResult.institutionId);
 
     const newRequest = await dbService.createCorrectionRequest({
       resultId: body.resultId,

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { performSystemAudit } from '@/lib/audit/tamperDetector';
 import { dbService } from '@/lib/storage/db';
 import { requireAuth, AuthError } from '@/lib/server/auth';
+import { resolveTenantContext } from '@/lib/server/tenantContext';
 
 export async function GET(request: Request) {
   try {
@@ -14,16 +15,14 @@ export async function GET(request: Request) {
 
     const url = new URL(request.url);
     const requestedInst = url.searchParams.get('institutionId');
-    const instId =
-      user.role === 'SUPER_ADMIN' && requestedInst
-        ? requestedInst
-        : user.institutionId || 'inst_verimark_01';
+    const instId = resolveTenantContext(user, requestedInst);
 
-    const report = await performSystemAudit();
+    const report = await performSystemAudit(instId);
     const logs = await dbService.getAuditLogs(instId);
 
     return NextResponse.json({
       success: true,
+      institutionId: instId,
       report,
       logs: logs.slice(0, 50),
     });

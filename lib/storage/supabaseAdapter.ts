@@ -56,6 +56,19 @@ export class SupabaseStorageAdapter implements StorageAdapter {
     return inserted;
   }
 
+  async updateInstitution(id: string, data: Partial<Institution>): Promise<Institution | null> {
+    const client = this.getClient();
+    const updates: any = { updated_at: new Date().toISOString() };
+    if (data.name) updates.name = data.name;
+    if (data.domain) updates.domain = data.domain;
+    if (data.logoUrl !== undefined) updates.logo_url = data.logoUrl;
+    if (data.themeColor) updates.theme_color = data.themeColor;
+    if (data.status) updates.status = data.status;
+    const { data: updated, error } = await client.from('institutions').update(updates).eq('id', id).select().maybeSingle();
+    if (error) throw new Error(`Supabase updateInstitution error: ${error.message}`);
+    return updated;
+  }
+
   async getStudents(institutionId?: string): Promise<StudentProfile[]> {
     const client = this.getClient();
     let q = client.from('students').select('*');

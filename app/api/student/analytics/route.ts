@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { dbService } from '@/lib/storage/db';
 import { requireAuth, AuthError } from '@/lib/server/auth';
 import { verifyResultCryptographically } from '@/lib/audit/publicVerifier';
+import { resolveTenantContext } from '@/lib/server/tenantContext';
 import {
   PersonalStudentAnalyticsResponse,
   StudentMidEndTermComparison,
@@ -25,14 +26,16 @@ function computeGrade(percentage: number): string {
 
 export async function GET(request: Request) {
   try {
-    const user = await requireAuth(request, ['STUDENT', 'ADMIN']);
+    const user = await requireAuth(request, ['STUDENT', 'ADMIN', 'INSTITUTION_ADMIN', 'SUPER_ADMIN']);
 
     const url = new URL(request.url);
     const requestedRegNo = url.searchParams.get('regNo');
+    const requestedInst = url.searchParams.get('institutionId');
     const benchmarkParam = url.searchParams.get('benchmark');
     const benchmark = benchmarkParam ? Math.max(0, Math.min(100, Number(benchmarkParam))) : 40;
 
     let targetRegNo = user.studentRegNo;
+    const instId = user.role === 'SUPER_ADMIN' ? requestedInst || user.institutionId : resolveTenantContext(user, requestedInst);
 
     // Strict Backend Ownership Enforcement
     if (user.role === 'STUDENT') {
@@ -49,7 +52,7 @@ export async function GET(request: Request) {
         );
       }
       targetRegNo = user.studentRegNo;
-    } else if (user.role === 'ADMIN') {
+    } else {
       targetRegNo = requestedRegNo || user.studentRegNo || 'CF2026-CSE-101';
     }
 
@@ -58,7 +61,7 @@ export async function GET(request: Request) {
     }
 
     // Retrieve only authenticated student records
-    const results = await dbService.getResultsByStudentRegNo(targetRegNo);
+    const results = await dbService.getResultsByStudentRegNo(targetRegNo, instId || undefined);
 
     if (!results || results.length === 0) {
       return NextResponse.json({

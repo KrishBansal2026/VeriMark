@@ -13,9 +13,9 @@ import { SystemAuditReport, TamperAuditFinding } from '../types';
  * - Validates the complete append-only ledger event hash chain.
  * - Detects deleted, replaced, or modified events.
  */
-export async function performSystemAudit(): Promise<SystemAuditReport> {
+export async function performSystemAudit(institutionId = 'inst_verimark_01'): Promise<SystemAuditReport> {
   const auditedAt = new Date().toISOString();
-  const allResults = await dbService.getResults();
+  const allResults = await dbService.getResults(institutionId);
   const publishedResults = allResults.filter(
     (r) => r.status === 'published' || r.status === 'corrected'
   );
@@ -57,7 +57,10 @@ export async function performSystemAudit(): Promise<SystemAuditReport> {
   let independentCheckpoint = null;
   let independentCheckpointVerified = false;
   try {
-    independentCheckpoint = await getLatestIndependentCheckpoint();
+    independentCheckpoint = await dbService.getLatestCheckpoint(institutionId);
+    if (!independentCheckpoint && institutionId === 'inst_verimark_01') {
+      independentCheckpoint = await getLatestIndependentCheckpoint();
+    }
     if (independentCheckpoint) {
       const v = verifyCheckpoint(independentCheckpoint);
       independentCheckpointVerified = v.isValid;
@@ -117,7 +120,7 @@ export async function performSystemAudit(): Promise<SystemAuditReport> {
   }
 
   // 4. Phase 5: Complete Ledger Event Chain Integrity Verification
-  const events = await dbService.getLedgerEvents();
+  const events = await dbService.getLedgerEvents(institutionId);
 
   if (independentCheckpoint && events.length !== independentCheckpoint.eventCount) {
     eventChainIntegrity = false;

@@ -1,16 +1,23 @@
 import { NextResponse } from 'next/server';
 import { dbService } from '@/lib/storage/db';
 import { requireAuth, AuthError } from '@/lib/server/auth';
+import { resolveTenantContext } from '@/lib/server/tenantContext';
 
 export async function POST(
   request: Request,
   { params }: { params: { id: string } }
 ) {
   try {
-    // Phase 1: Authentication & Authorization (Admin only)
-    await requireAuth(request, ['ADMIN']);
+    const user = await requireAuth(request, ['ADMIN', 'INSTITUTION_ADMIN', 'SUPER_ADMIN']);
 
     const { id } = params;
+    const target = await dbService.getResultById(id);
+    if (!target) {
+      return NextResponse.json({ success: false, error: 'Result not found' }, { status: 404 });
+    }
+
+    resolveTenantContext(user, target.institutionId);
+
     const { result, checkpoint } = await dbService.publishResult(id);
     return NextResponse.json({
       success: true,

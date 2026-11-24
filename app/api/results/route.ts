@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { dbService } from '@/lib/storage/db';
 import { requireAuth, AuthError } from '@/lib/server/auth';
+import { resolveTenantContext } from '@/lib/server/tenantContext';
 
 export async function GET(request: Request) {
   try {
@@ -18,7 +19,7 @@ export async function GET(request: Request) {
 
     const url = new URL(request.url);
     const requestedInst = url.searchParams.get('institutionId');
-    const instId = user.role === 'SUPER_ADMIN' && requestedInst ? requestedInst : user.institutionId || 'inst_verimark_01';
+    const instId = resolveTenantContext(user, requestedInst);
 
     const results = await dbService.getResults(instId);
     const checkpoints = await dbService.getCheckpoints(instId);
@@ -72,10 +73,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const instId =
-      user.role === 'SUPER_ADMIN' && body.institutionId
-        ? body.institutionId
-        : user.institutionId || 'inst_verimark_01';
+    const instId = resolveTenantContext(user, body.institutionId);
 
     const newResult = await dbService.createResult({
       institutionId: instId,

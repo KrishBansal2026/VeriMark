@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { dbService } from '@/lib/storage/db';
 import { requireAuth, AuthError, hashPassword } from '@/lib/server/auth';
+import { resolveTenantContext } from '@/lib/server/tenantContext';
 import { randomBytes } from 'crypto';
 
 export async function PUT(
@@ -14,6 +15,17 @@ export async function PUT(
     const targetUser = await dbService.getUserById(params.id);
     if (!targetUser) {
       return NextResponse.json({ success: false, error: 'User not found' }, { status: 404 });
+    }
+
+    // Cross-tenant boundary check
+    resolveTenantContext(adminUser, targetUser.institutionId);
+
+    // Platform Super Admin protection: Non-super admin cannot alter Super Admin
+    if (targetUser.role === 'SUPER_ADMIN' && adminUser.role !== 'SUPER_ADMIN') {
+      return NextResponse.json(
+        { success: false, error: 'Forbidden: You cannot modify a Platform Super Admin account' },
+        { status: 403 }
+      );
     }
 
     // Toggle active status

@@ -27,23 +27,26 @@ export interface AnalyticsFilterParams {
 
 export async function getAcademicAnalyticsData(
   params: AnalyticsFilterParams,
-  userRole: UserRole
+  userRole: UserRole,
+  institutionId?: string
 ): Promise<AcademicAnalyticsResponse> {
   // 1. Ensure initial seed data is present
   await dbService.seedInitialData();
 
-  // 2. Fetch raw database records
-  const allResults = await dbService.getResults();
+  const instId = institutionId || 'inst_verimark_01';
+
+  // 2. Fetch raw database records scoped to institution
+  const allResults = await dbService.getResults(instId);
   const publishedResults = allResults.filter(
     (r) => r.status === 'published' || r.status === 'corrected'
   );
-  const ledgerEvents = await dbService.getLedgerEvents();
-  const checkpoints = await dbService.getCheckpoints();
-  const correctionRequests = await dbService.getCorrectionRequests();
+  const ledgerEvents = await dbService.getLedgerEvents(instId);
+  const checkpoints = await dbService.getCheckpoints(instId);
+  const correctionRequests = await dbService.getCorrectionRequests(instId);
   const latestCheckpoint = checkpoints.length > 0 ? checkpoints[checkpoints.length - 1] : null;
 
-  // 3. Cryptographic system audit
-  const auditReport = await performSystemAudit();
+  // 3. Cryptographic system audit scoped to institution
+  const auditReport = await performSystemAudit(instId);
 
   // 4. Collect available filter options from published results
   const allExams = Array.from(new Set(publishedResults.map((r) => r.examName))).sort();

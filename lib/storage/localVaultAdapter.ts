@@ -41,6 +41,10 @@ export class LocalVaultStorageAdapter implements StorageAdapter {
     return dbService.createInstitution(data);
   }
 
+  async updateInstitution(id: string, data: Partial<Institution>): Promise<Institution | null> {
+    return dbService.updateInstitution(id, data);
+  }
+
   async getStudents(institutionId?: string): Promise<StudentProfile[]> {
     return dbService.getStudents(institutionId);
   }

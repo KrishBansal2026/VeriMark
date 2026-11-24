@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { dbService } from '@/lib/storage/db';
 import { requireAuth, AuthError } from '@/lib/server/auth';
+import { resolveTenantContext } from '@/lib/server/tenantContext';
 
 export async function POST(
   request: Request,
@@ -11,6 +12,14 @@ export async function POST(
     const user = await requireAuth(request, ['EXAM_CONTROLLER', 'ACADEMIC_DEAN']);
 
     const { id } = params;
+    const targetReq = await dbService.getCorrectionRequestById(id);
+    if (!targetReq) {
+      return NextResponse.json({ success: false, error: 'Correction request not found' }, { status: 404 });
+    }
+
+    // Strict cross-tenant check: approver must belong to the same institution
+    resolveTenantContext(user, targetReq.institutionId);
+
     const body = await request.json().catch(() => ({}));
 
     // Server-enforced approval using verified session user

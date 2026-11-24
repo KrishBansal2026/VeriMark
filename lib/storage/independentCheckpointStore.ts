@@ -82,18 +82,20 @@ export class LocalFileCheckpointAdapter implements ICheckpointStoreAdapter {
     }
 
     const existing = await this.getCheckpoints();
+    const instId = checkpoint.institutionId || 'inst_verimark_01';
+    const instCheckpoints = existing.filter((c) => (c.institutionId || 'inst_verimark_01') === instId);
 
-    // Enforce monotonic continuous sequence number
-    if (existing.length > 0) {
-      const latest = existing[existing.length - 1];
+    // Enforce monotonic continuous sequence number for this specific institution
+    if (instCheckpoints.length > 0) {
+      const latest = instCheckpoints[instCheckpoints.length - 1];
       if (checkpoint.sequenceNumber <= latest.sequenceNumber) {
         throw new Error(
-          `Rollback attack detected: new checkpoint seq #${checkpoint.sequenceNumber} <= current seq #${latest.sequenceNumber}`
+          `Rollback attack detected: new checkpoint seq #${checkpoint.sequenceNumber} <= current seq #${latest.sequenceNumber} for institution ${instId}`
         );
       }
       if (checkpoint.prevCheckpointHash.toLowerCase() !== latest.checkpointHash.toLowerCase()) {
         throw new Error(
-          `Checkpoint chain discontinuity: prevCheckpointHash does not match latest checkpoint hash`
+          `Checkpoint chain discontinuity: prevCheckpointHash does not match latest checkpoint hash for institution ${instId}`
         );
       }
     }
@@ -102,10 +104,12 @@ export class LocalFileCheckpointAdapter implements ICheckpointStoreAdapter {
     safeWriteVaultFile(storeFile, JSON.stringify(existing, null, 2));
   }
 
-  async getLatestCheckpoint(): Promise<LedgerCheckpoint | null> {
+  async getLatestCheckpoint(institutionId?: string): Promise<LedgerCheckpoint | null> {
     const checkpoints = await this.getCheckpoints();
-    if (checkpoints.length === 0) return null;
-    return checkpoints[checkpoints.length - 1];
+    const instId = institutionId || 'inst_verimark_01';
+    const instCheckpoints = checkpoints.filter((c) => (c.institutionId || 'inst_verimark_01') === instId);
+    if (instCheckpoints.length === 0) return null;
+    return instCheckpoints[instCheckpoints.length - 1];
   }
 }
 
@@ -123,8 +127,10 @@ export function resetIndependentStoreForTesting(): void {
   }
 }
 
-export async function getIndependentCheckpoints(): Promise<LedgerCheckpoint[]> {
-  return activeAdapter.getCheckpoints();
+export async function getIndependentCheckpoints(institutionId?: string): Promise<LedgerCheckpoint[]> {
+  const checkpoints = await activeAdapter.getCheckpoints();
+  if (!institutionId) return checkpoints;
+  return checkpoints.filter((c) => (c.institutionId || 'inst_verimark_01') === institutionId);
 }
 
 export async function commitIndependentCheckpoint(checkpoint: LedgerCheckpoint): Promise<void> {
@@ -135,8 +141,8 @@ export async function commitIndependentCheckpoint(checkpoint: LedgerCheckpoint):
  * Retrieves and cryptographically validates the latest checkpoint from the independent store.
  * Detects forgery, signature tampering, or chain corruptions upon retrieval.
  */
-export async function getLatestIndependentCheckpoint(): Promise<LedgerCheckpoint | null> {
-  const latest = await activeAdapter.getLatestCheckpoint();
+export async function getLatestIndependentCheckpoint(institutionId = 'inst_verimark_01'): Promise<LedgerCheckpoint | null> {
+  const latest = await (activeAdapter as LocalFileCheckpointAdapter).getLatestCheckpoint(institutionId);
   if (!latest) return null;
 
   const verification = verifyCheckpoint(latest);

@@ -649,6 +649,19 @@ export const dbService = {
     return newInst;
   },
 
+  updateInstitution: async (id: string, data: Partial<Institution>): Promise<Institution | null> => {
+    const db = ensureDbFile();
+    const idx = db.institutions.findIndex((i) => i.id === id);
+    if (idx === -1) return null;
+    db.institutions[idx] = {
+      ...db.institutions[idx],
+      ...data,
+      updatedAt: new Date().toISOString(),
+    };
+    saveDb(db);
+    return db.institutions[idx];
+  },
+
   // Students Directory
   getStudents: async (institutionId?: string): Promise<StudentProfile[]> => {
     const db = ensureDbFile();

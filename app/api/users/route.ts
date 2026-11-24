@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { dbService } from '@/lib/storage/db';
 import { requireAuth, AuthError, hashPassword } from '@/lib/server/auth';
+import { resolveTenantContext } from '@/lib/server/tenantContext';
 import { randomBytes } from 'crypto';
 
 export async function GET(request: Request) {
@@ -9,10 +10,7 @@ export async function GET(request: Request) {
 
     const url = new URL(request.url);
     const requestedInst = url.searchParams.get('institutionId');
-    const instId =
-      user.role === 'SUPER_ADMIN' && requestedInst
-        ? requestedInst
-        : user.institutionId || 'inst_verimark_01';
+    const instId = resolveTenantContext(user, requestedInst);
 
     const users = await dbService.getUsers(instId);
 
@@ -56,10 +54,14 @@ export async function POST(request: Request) {
       );
     }
 
-    const instId =
-      adminUser.role === 'SUPER_ADMIN' && body.institutionId
-        ? body.institutionId
-        : adminUser.institutionId || 'inst_verimark_01';
+    if (body.role === 'SUPER_ADMIN' && adminUser.role !== 'SUPER_ADMIN') {
+      return NextResponse.json(
+        { success: false, error: 'Forbidden: Only Platform Super Admins can provision Super Admin accounts' },
+        { status: 403 }
+      );
+    }
+
+    const instId = resolveTenantContext(adminUser, body.institutionId);
 
     const existing = await dbService.getUserByEmail(body.email);
     if (existing) {

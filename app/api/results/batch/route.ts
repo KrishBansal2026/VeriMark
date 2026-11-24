@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { dbService } from '@/lib/storage/db';
 import { requireAuth, AuthError } from '@/lib/server/auth';
+import { resolveTenantContext } from '@/lib/server/tenantContext';
 
 export async function POST(request: Request) {
   try {
@@ -27,10 +28,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const instId =
-      user.role === 'SUPER_ADMIN' && body.institutionId
-        ? body.institutionId
-        : user.institutionId || 'inst_verimark_01';
+    const instId = resolveTenantContext(user, body.institutionId);
 
     const createdResults = [];
     const errors: { index: number; regNo?: string; error: string }[] = [];

@@ -43,6 +43,7 @@ export interface StorageAdapter {
   getInstitutions(): Promise<Institution[]>;
   getInstitutionById(id: string): Promise<Institution | null>;
   createInstitution(data: Partial<Institution>): Promise<Institution>;
+  updateInstitution(id: string, data: Partial<Institution>): Promise<Institution | null>;
 
   // Students
   getStudents(institutionId?: string): Promise<StudentProfile[]>;
