@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import {
   StudentResult,
+  ResultStatus,
   LedgerEvent,
   LedgerCheckpoint,
   CorrectionRequest,
@@ -655,6 +656,11 @@ export const dbService = {
     return db.students.filter((s) => s.institutionId === institutionId);
   },
 
+  getStudentById: async (id: string): Promise<StudentProfile | null> => {
+    const db = ensureDbFile();
+    return db.students.find((s) => s.id === id) || null;
+  },
+
   getStudentByRegNo: async (regNo: string, institutionId?: string): Promise<StudentProfile | null> => {
     const db = ensureDbFile();
     const clean = regNo.trim().toUpperCase();
@@ -667,12 +673,19 @@ export const dbService = {
     );
   },
 
-  createStudent: async (data: Omit<StudentProfile, 'id' | 'createdAt' | 'updatedAt'>): Promise<StudentProfile> => {
+  createStudent: async (data: Partial<StudentProfile>): Promise<StudentProfile> => {
     const db = ensureDbFile();
     const now = new Date().toISOString();
     const newStudent: StudentProfile = {
-      ...data,
-      id: `stud_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      institutionId: data.institutionId || 'inst_verimark_01',
+      regNo: data.regNo || `TEMP-${Date.now()}`,
+      fullName: data.fullName || 'Student',
+      email: data.email || 'student@verimark.edu',
+      course: data.course || 'B.Tech Computer Science & Engineering',
+      department: data.department || 'Computer Science & Engineering',
+      batchYear: data.batchYear || '2022-2026',
+      status: data.status || 'active',
+      id: data.id || `stud_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
       createdAt: now,
       updatedAt: now,
     };
@@ -706,11 +719,17 @@ export const dbService = {
     return db.examinations.find((e) => e.id === id) || null;
   },
 
-  createExamination: async (data: Omit<Examination, 'id' | 'createdAt'>): Promise<Examination> => {
+  createExamination: async (data: Partial<Examination>): Promise<Examination> => {
     const db = ensureDbFile();
     const newExam: Examination = {
-      ...data,
-      id: `exam_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      institutionId: data.institutionId || 'inst_verimark_01',
+      examCode: data.examCode || `EX-${Date.now()}`,
+      examName: data.examName || 'Examination',
+      academicYear: data.academicYear || '2025-2026',
+      semester: data.semester || 'Spring 2026',
+      conductedDate: data.conductedDate || new Date().toISOString().split('T')[0],
+      status: data.status || 'draft',
+      id: data.id || `exam_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
       createdAt: new Date().toISOString(),
     };
     db.examinations.push(newExam);
@@ -737,11 +756,17 @@ export const dbService = {
     return db.subjects.filter((s) => s.institutionId === institutionId);
   },
 
-  createSubject: async (data: Omit<SubjectItem, 'id' | 'createdAt'>): Promise<SubjectItem> => {
+  createSubject: async (data: Partial<SubjectItem>): Promise<SubjectItem> => {
     const db = ensureDbFile();
     const newSubj: SubjectItem = {
-      ...data,
-      id: `subj_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      institutionId: data.institutionId || 'inst_verimark_01',
+      subjectCode: data.subjectCode || `SUB-${Date.now()}`,
+      subjectName: data.subjectName || 'Subject',
+      department: data.department || 'Computer Science & Engineering',
+      credits: data.credits || 4,
+      maxMarks: data.maxMarks || 100,
+      passingMarks: data.passingMarks || 40,
+      id: data.id || `subj_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
       createdAt: new Date().toISOString(),
     };
     db.subjects.push(newSubj);
@@ -797,6 +822,10 @@ export const dbService = {
     return true;
   },
 
+  setUserActiveStatus: async (id: string, isActive: boolean): Promise<boolean> => {
+    return dbService.updateUserStatus(id, isActive);
+  },
+
   // Session Revocation
   revokeToken: async (tokenHash: string, userId: string, expiresAt: string): Promise<void> => {
     const db = ensureDbFile();
@@ -815,12 +844,20 @@ export const dbService = {
   },
 
   // Audit Logs
-  recordAuditLog: async (log: Omit<StoredAuditLog, 'id' | 'createdAt'>): Promise<StoredAuditLog> => {
+  recordAuditLog: async (log: Partial<StoredAuditLog>): Promise<StoredAuditLog> => {
     const db = ensureDbFile();
     const newEntry: StoredAuditLog = {
-      ...log,
-      id: `log_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-      createdAt: new Date().toISOString(),
+      action: log.action || 'AUDIT_ACTION',
+      actorId: log.actorId || 'system',
+      actorName: log.actorName || 'System',
+      actorRole: log.actorRole || 'SYSTEM',
+      entityType: log.entityType || 'SYSTEM',
+      entityId: log.entityId,
+      details: log.details || {},
+      ipAddress: log.ipAddress || '127.0.0.1',
+      institutionId: log.institutionId || 'inst_verimark_01',
+      id: log.id || `log_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      createdAt: log.createdAt || new Date().toISOString(),
     };
     db.auditLogs.unshift(newEntry);
     if (db.auditLogs.length > 500) {
@@ -880,6 +917,19 @@ export const dbService = {
     const db = ensureDbFile();
     const result = db.results.find((r) => r.id === id);
     return result || null;
+  },
+
+  updateResultStatus: async (id: string, status: ResultStatus, version?: number): Promise<StudentResult | null> => {
+    const db = ensureDbFile();
+    const result = db.results.find((r) => r.id === id);
+    if (!result) return null;
+    result.status = status;
+    if (typeof version === 'number') {
+      result.version = version;
+    }
+    result.updatedAt = new Date().toISOString();
+    saveDb(db);
+    return result;
   },
 
   createResult: async (data: {
@@ -984,10 +1034,28 @@ export const dbService = {
     return db.ledgerEvents.filter((e) => !e.institutionId || e.institutionId === institutionId);
   },
 
+  appendLedgerEvent: async (event: LedgerEvent): Promise<LedgerEvent> => {
+    const db = ensureDbFile();
+    db.ledgerEvents.push(event);
+    saveDb(db);
+    return event;
+  },
+
   getCheckpoints: async (institutionId?: string): Promise<LedgerCheckpoint[]> => {
     const db = ensureDbFile();
     if (!institutionId) return db.checkpoints;
     return db.checkpoints.filter((c) => !c.institutionId || c.institutionId === institutionId);
+  },
+
+  saveCheckpoint: async (checkpoint: LedgerCheckpoint): Promise<void> => {
+    const db = ensureDbFile();
+    const idx = db.checkpoints.findIndex((c) => c.id === checkpoint.id);
+    if (idx >= 0) {
+      db.checkpoints[idx] = checkpoint;
+    } else {
+      db.checkpoints.push(checkpoint);
+    }
+    saveDb(db);
   },
 
   getLatestCheckpoint: async (institutionId?: string): Promise<LedgerCheckpoint | null> => {
@@ -1045,14 +1113,14 @@ export const dbService = {
     return db.correctionRequests.find((cr) => cr.id === id) || null;
   },
 
-  createCorrectionRequest: async (params: {
-    resultId: string;
-    proposedMarks: number;
-    reason: string;
-    requester: AuthUser;
-    institutionId?: string;
-  }): Promise<CorrectionRequest> => {
+  createCorrectionRequest: async (params: any): Promise<CorrectionRequest> => {
     const db = ensureDbFile();
+    if (params.id && params.originalHash && params.proposedHash) {
+      db.correctionRequests.push(params);
+      saveDb(db);
+      return params;
+    }
+
     const result = db.results.find((r) => r.id === params.resultId);
     if (!result) {
       throw new Error(`Target result ${params.resultId} not found`);
@@ -1101,6 +1169,15 @@ export const dbService = {
     db.correctionRequests.push(request);
     saveDb(db);
     return request;
+  },
+
+  updateCorrectionRequest: async (req: CorrectionRequest): Promise<void> => {
+    const db = ensureDbFile();
+    const idx = db.correctionRequests.findIndex((c) => c.id === req.id);
+    if (idx >= 0) {
+      db.correctionRequests[idx] = req;
+      saveDb(db);
+    }
   },
 
   submitCorrectionApproval: async (params: {
