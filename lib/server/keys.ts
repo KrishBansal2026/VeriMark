@@ -136,6 +136,8 @@ export function getServerKeys(): KeyRegistry {
     approver2: { ...CANONICAL_KEYSTORE.approver2, role: 'ACADEMIC_DEAN' as const },
   };
 
+  // Emit a warning that we are falling back to the canonical keystore because no existing keystore was found.
+  console.warn('[VeriMark Vault] Warning: No existing keystore found; falling back to canonical keystore. Original cryptographic keys may be missing.');
   safeWriteVaultFile(keysFile, JSON.stringify(canonical, null, 2));
   cachedKeys = canonical;
   return canonical;

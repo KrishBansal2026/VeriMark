@@ -65,6 +65,8 @@ function ensureDbFile(): DatabaseSchema {
 
   // Fallback to canonical snapshot ensuring academic records are never lost or empty
   const initialDb: DatabaseSchema = JSON.parse(JSON.stringify(CANONICAL_DATABASE));
+  // Emit a clear warning that we are falling back to the canonical snapshot because no existing vault data was found.
+  console.warn('[VeriMark Vault] Warning: No existing vault data found; falling back to canonical snapshot. Original records may be missing.');
   safeWriteVaultFile(dbFile, JSON.stringify(initialDb, null, 2));
   return initialDb;
 }
