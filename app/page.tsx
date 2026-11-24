@@ -15,8 +15,15 @@ import {
   RefreshCw,
   ExternalLink,
   Lock,
+  Users,
+  BookOpen,
+  Calendar,
+  Clock,
+  Activity,
+  CheckCircle2,
+  AlertTriangle,
 } from 'lucide-react';
-import { StudentResult } from '@/lib/types';
+import { StudentResult, AuditLogEntry } from '@/lib/types';
 
 export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
@@ -32,13 +39,50 @@ export default function DashboardPage() {
     };
   } | null>(null);
 
+  const [studentCount, setStudentCount] = useState<number>(0);
+  const [examCount, setExamCount] = useState<number>(0);
+  const [pendingCorrectionsCount, setPendingCorrectionsCount] = useState<number>(0);
+  const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([]);
+
   const fetchDashboardData = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/results');
-      const json = await res.json();
-      if (json.success) {
-        setData(json);
+      const [resResults, resStudents, resExams, resCorrections, resAudit] = await Promise.all([
+        fetch('/api/results'),
+        fetch('/api/students'),
+        fetch('/api/examinations'),
+        fetch('/api/corrections'),
+        fetch('/api/audit'),
+      ]);
+
+      if (resResults.ok) {
+        const json = await resResults.json();
+        if (json.success) setData(json);
+      }
+
+      if (resStudents.ok) {
+        const json = await resStudents.json();
+        if (json.success && json.students) setStudentCount(json.students.length);
+      }
+
+      if (resExams.ok) {
+        const json = await resExams.json();
+        if (json.success && json.examinations) setExamCount(json.examinations.length);
+      }
+
+      if (resCorrections.ok) {
+        const json = await resCorrections.json();
+        if (json.success && json.requests) {
+          const pending = json.requests.filter((r: any) => r.status === 'PENDING').length;
+          setPendingCorrectionsCount(pending);
+        }
+      }
+
+      if (resAudit.ok) {
+        const json = await resAudit.json();
+        if (json.success && json.logs) {
+          setAuditLogs(json.logs.slice(0, 10));
+        }
       }
     } catch (err) {
       console.error('Failed to load dashboard data:', err);
@@ -54,37 +98,60 @@ export default function DashboardPage() {
   return (
     <>
       <Header
-        title="Admin Examination Dashboard"
-        subtitle="VeriMark Cryptographic Ledger & Result Registry"
+        title="Institutional Examination Dashboard"
+        subtitle="VeriMark Cryptographic Ledger & Academic Result Registry"
       />
 
       <main className="p-8 space-y-8 max-w-7xl">
-        {/* Metric Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
+        {/* Metric Cards - 5 Key SaaS Pillars */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+          {/* Card 1: Students */}
           <div className="bg-[#111c38] border border-[#1c2b50] rounded-xl p-5 relative overflow-hidden shadow-sm">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-xs font-medium text-slate-400">Total Results</p>
+                <p className="text-xs font-medium text-slate-400">Enrolled Students</p>
                 <h3 className="text-2xl font-bold text-white mt-1">
-                  {loading ? '...' : data?.stats.total ?? 0}
+                  {loading ? '...' : studentCount || (data?.results.length ?? 0)}
                 </h3>
               </div>
               <div className="w-10 h-10 rounded-lg bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400">
-                <GraduationCap className="w-5 h-5" />
+                <Users className="w-5 h-5" />
               </div>
             </div>
             <div className="mt-4 flex items-center text-xs text-slate-400">
-              <span className="text-blue-400 font-semibold mr-1.5">
-                {data?.stats.draft ?? 0}
-              </span>{' '}
-              draft pending publication
+              <Link href="/students" className="text-blue-400 hover:underline flex items-center gap-1 font-medium">
+                <span>View directory</span>
+                <ArrowRight className="w-3 h-3" />
+              </Link>
             </div>
           </div>
 
+          {/* Card 2: Active Examinations */}
           <div className="bg-[#111c38] border border-[#1c2b50] rounded-xl p-5 relative overflow-hidden shadow-sm">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-xs font-medium text-slate-400">Sealed & Published</p>
+                <p className="text-xs font-medium text-slate-400">Active Exams</p>
+                <h3 className="text-2xl font-bold text-purple-400 mt-1">
+                  {loading ? '...' : examCount || 1}
+                </h3>
+              </div>
+              <div className="w-10 h-10 rounded-lg bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-400">
+                <Calendar className="w-5 h-5" />
+              </div>
+            </div>
+            <div className="mt-4 flex items-center text-xs text-slate-400">
+              <Link href="/examinations" className="text-purple-400 hover:underline flex items-center gap-1 font-medium">
+                <span>Manage sessions</span>
+                <ArrowRight className="w-3 h-3" />
+              </Link>
+            </div>
+          </div>
+
+          {/* Card 3: Sealed & Published */}
+          <div className="bg-[#111c38] border border-[#1c2b50] rounded-xl p-5 relative overflow-hidden shadow-sm">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs font-medium text-slate-400">Published Results</p>
                 <h3 className="text-2xl font-bold text-emerald-400 mt-1">
                   {loading ? '...' : data?.stats.published ?? 0}
                 </h3>
@@ -95,14 +162,15 @@ export default function DashboardPage() {
             </div>
             <div className="mt-4 flex items-center text-xs text-slate-400">
               <span className="text-emerald-400 font-semibold mr-1.5">100%</span>
-              Merkle tree inclusion verified
+              Merkle tree sealed
             </div>
           </div>
 
+          {/* Card 4: Signed Checkpoints */}
           <div className="bg-[#111c38] border border-[#1c2b50] rounded-xl p-5 relative overflow-hidden shadow-sm">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-xs font-medium text-slate-400">Signed Checkpoints</p>
+                <p className="text-xs font-medium text-slate-400">Checkpoints</p>
                 <h3 className="text-2xl font-bold text-cyan-400 mt-1">
                   #{loading ? '...' : data?.stats.latestCheckpointSeq ?? 0}
                 </h3>
@@ -112,18 +180,20 @@ export default function DashboardPage() {
               </div>
             </div>
             <div className="mt-4 flex items-center text-xs text-slate-400 truncate">
-              <span className="text-cyan-400 font-mono text-[11px] truncate">
-                {data?.stats.merkleRoot ? `${data.stats.merkleRoot.substring(0, 16)}...` : 'Genesis'}
-              </span>
+              <Link href="/ledger" className="text-cyan-400 hover:underline flex items-center gap-1 font-medium">
+                <span>Audit checkpoints</span>
+                <ArrowRight className="w-3 h-3" />
+              </Link>
             </div>
           </div>
 
+          {/* Card 5: Dual-Signed Approvals */}
           <div className="bg-[#111c38] border border-[#1c2b50] rounded-xl p-5 relative overflow-hidden shadow-sm">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-xs font-medium text-slate-400">Corrected Records</p>
+                <p className="text-xs font-medium text-slate-400">Correction Workflow</p>
                 <h3 className="text-2xl font-bold text-amber-400 mt-1">
-                  {loading ? '...' : data?.stats.corrected ?? 0}
+                  {loading ? '...' : pendingCorrectionsCount > 0 ? `${pendingCorrectionsCount} Pending` : `${data?.stats.corrected ?? 0} Done`}
                 </h3>
               </div>
               <div className="w-10 h-10 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400">
@@ -131,8 +201,10 @@ export default function DashboardPage() {
               </div>
             </div>
             <div className="mt-4 flex items-center text-xs text-slate-400">
-              <span className="text-amber-400 font-semibold mr-1.5">Dual-Signed</span>
-              By Dean & Controller
+              <Link href="/corrections" className="text-amber-400 hover:underline flex items-center gap-1 font-medium">
+                <span>Review requests</span>
+                <ArrowRight className="w-3 h-3" />
+              </Link>
             </div>
           </div>
         </div>
@@ -143,9 +215,9 @@ export default function DashboardPage() {
             <div className="space-y-1">
               <div className="flex items-center space-x-2">
                 <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold bg-cyan-500/20 text-cyan-400 border border-cyan-500/30">
-                  ACTIVE CHECKPOINT
+                  ACTIVE MERKLE CHECKPOINT
                 </span>
-                <span className="text-xs text-slate-400">Independently Authenticated</span>
+                <span className="text-xs text-slate-400">RFC 6962 Domain-Separated</span>
               </div>
               <h2 className="text-lg font-bold text-white">
                 Ledger Root:{' '}
@@ -177,13 +249,82 @@ export default function DashboardPage() {
           </div>
         </div>
 
+        {/* Quick Management Hub */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+          <Link
+            href="/students"
+            className="p-4 rounded-xl bg-[#111c38]/80 hover:bg-[#162244] border border-[#1c2b50] transition-all flex flex-col items-center text-center group"
+          >
+            <div className="w-10 h-10 rounded-lg bg-blue-500/10 text-blue-400 flex items-center justify-center mb-2 group-hover:scale-110 transition-transform">
+              <Users className="w-5 h-5" />
+            </div>
+            <span className="text-xs font-semibold text-white">Student Directory</span>
+            <span className="text-[10px] text-slate-400 mt-0.5">Rosters & Profiles</span>
+          </Link>
+
+          <Link
+            href="/examinations"
+            className="p-4 rounded-xl bg-[#111c38]/80 hover:bg-[#162244] border border-[#1c2b50] transition-all flex flex-col items-center text-center group"
+          >
+            <div className="w-10 h-10 rounded-lg bg-purple-500/10 text-purple-400 flex items-center justify-center mb-2 group-hover:scale-110 transition-transform">
+              <Calendar className="w-5 h-5" />
+            </div>
+            <span className="text-xs font-semibold text-white">Examinations</span>
+            <span className="text-[10px] text-slate-400 mt-0.5">Sessions & Subjects</span>
+          </Link>
+
+          <Link
+            href="/results"
+            className="p-4 rounded-xl bg-[#111c38]/80 hover:bg-[#162244] border border-[#1c2b50] transition-all flex flex-col items-center text-center group"
+          >
+            <div className="w-10 h-10 rounded-lg bg-emerald-500/10 text-emerald-400 flex items-center justify-center mb-2 group-hover:scale-110 transition-transform">
+              <GraduationCap className="w-5 h-5" />
+            </div>
+            <span className="text-xs font-semibold text-white">Results & Marks</span>
+            <span className="text-[10px] text-slate-400 mt-0.5">Upload & Publish</span>
+          </Link>
+
+          <Link
+            href="/corrections"
+            className="p-4 rounded-xl bg-[#111c38]/80 hover:bg-[#162244] border border-[#1c2b50] transition-all flex flex-col items-center text-center group"
+          >
+            <div className="w-10 h-10 rounded-lg bg-amber-500/10 text-amber-400 flex items-center justify-center mb-2 group-hover:scale-110 transition-transform">
+              <UserCheck className="w-5 h-5" />
+            </div>
+            <span className="text-xs font-semibold text-white">Dual Approvals</span>
+            <span className="text-[10px] text-slate-400 mt-0.5">Controller & Dean</span>
+          </Link>
+
+          <Link
+            href="/users"
+            className="p-4 rounded-xl bg-[#111c38]/80 hover:bg-[#162244] border border-[#1c2b50] transition-all flex flex-col items-center text-center group"
+          >
+            <div className="w-10 h-10 rounded-lg bg-indigo-500/10 text-indigo-400 flex items-center justify-center mb-2 group-hover:scale-110 transition-transform">
+              <Lock className="w-5 h-5" />
+            </div>
+            <span className="text-xs font-semibold text-white">User Accounts</span>
+            <span className="text-[10px] text-slate-400 mt-0.5">RBAC & Passwords</span>
+          </Link>
+
+          <Link
+            href="/audit"
+            className="p-4 rounded-xl bg-[#111c38]/80 hover:bg-[#162244] border border-[#1c2b50] transition-all flex flex-col items-center text-center group"
+          >
+            <div className="w-10 h-10 rounded-lg bg-rose-500/10 text-rose-400 flex items-center justify-center mb-2 group-hover:scale-110 transition-transform">
+              <ShieldAlert className="w-5 h-5" />
+            </div>
+            <span className="text-xs font-semibold text-white">Security Audit</span>
+            <span className="text-[10px] text-slate-400 mt-0.5">Tamper Detection</span>
+          </Link>
+        </div>
+
         {/* Quick Actions & Recent Results */}
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="text-base font-bold text-white tracking-tight flex items-center space-x-2">
               <span>Published Examination Results</span>
               <span className="text-xs text-slate-400 font-normal">
-                ({data?.results.length ?? 0} records)
+                ({data?.results.length ?? 0} records registered)
               </span>
             </h3>
 
@@ -277,8 +418,49 @@ export default function DashboardPage() {
           </div>
         </div>
 
+        {/* Live Security & Audit Trail */}
+        {auditLogs.length > 0 && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-bold text-white tracking-tight flex items-center space-x-2">
+                <Activity className="w-4 h-4 text-cyan-400" />
+                <span>Recent System & Security Audit Activity</span>
+              </h3>
+              <Link href="/audit" className="text-xs text-blue-400 hover:underline">
+                View Full Audit Report
+              </Link>
+            </div>
+
+            <div className="bg-[#111c38] border border-[#1c2b50] rounded-xl divide-y divide-[#1c2b50]/60 overflow-hidden">
+              {auditLogs.slice(0, 5).map((log) => (
+                <div key={log.id} className="p-3.5 flex items-center justify-between text-xs hover:bg-[#162244] transition-colors">
+                  <div className="flex items-center space-x-3">
+                    <span className="p-1.5 rounded-lg bg-blue-500/10 text-blue-400 border border-blue-500/20">
+                      <Clock className="w-3.5 h-3.5" />
+                    </span>
+                    <div>
+                      <div className="font-medium text-white flex items-center space-x-2">
+                        <span>{log.action}</span>
+                        <span className="text-[10px] text-slate-400 px-1.5 py-0.5 rounded bg-[#0b132b] border border-[#1c2b50]">
+                          {log.actorRole}
+                        </span>
+                      </div>
+                      <div className="text-[11px] text-slate-400">
+                        By <span className="text-slate-300">{log.actorName}</span> • Entity: {log.entityType} ({log.entityId || 'N/A'})
+                      </div>
+                    </div>
+                  </div>
+                  <div className="text-right text-[11px] text-slate-500 font-mono">
+                    {new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Security Architecture Reference */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-5 pt-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-5 pt-2">
           <div className="bg-[#111c38]/60 border border-[#1c2b50] rounded-xl p-5 space-y-2">
             <div className="w-8 h-8 rounded-lg bg-blue-500/20 text-blue-400 flex items-center justify-center font-bold text-xs">
               01

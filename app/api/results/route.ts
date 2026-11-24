@@ -4,16 +4,29 @@ import { requireAuth, AuthError } from '@/lib/server/auth';
 
 export async function GET(request: Request) {
   try {
-    // Only authorized institutional staff can view the full student examination roster
-    await requireAuth(request, ['ADMIN', 'EXAM_CONTROLLER', 'ACADEMIC_DEAN', 'AUDITOR']);
+    const user = await requireAuth(request, [
+      'ADMIN',
+      'INSTITUTION_ADMIN',
+      'SUPER_ADMIN',
+      'EXAM_CONTROLLER',
+      'ACADEMIC_DEAN',
+      'AUDITOR',
+      'FACULTY',
+    ]);
 
     await dbService.seedInitialData();
-    const results = await dbService.getResults();
-    const checkpoints = await dbService.getCheckpoints();
+
+    const url = new URL(request.url);
+    const requestedInst = url.searchParams.get('institutionId');
+    const instId = user.role === 'SUPER_ADMIN' && requestedInst ? requestedInst : user.institutionId || 'inst_verimark_01';
+
+    const results = await dbService.getResults(instId);
+    const checkpoints = await dbService.getCheckpoints(instId);
     const latestCheckpoint = checkpoints[checkpoints.length - 1] || null;
 
     return NextResponse.json({
       success: true,
+      institutionId: instId,
       results,
       stats: {
         total: results.length,
@@ -34,8 +47,11 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    // Phase 1: Authentication & Authorization (Admin only)
-    await requireAuth(request, ['ADMIN']);
+    const user = await requireAuth(request, [
+      'ADMIN',
+      'INSTITUTION_ADMIN',
+      'SUPER_ADMIN',
+    ]);
 
     const body = await request.json();
 
@@ -56,7 +72,14 @@ export async function POST(request: Request) {
       );
     }
 
+    const instId =
+      user.role === 'SUPER_ADMIN' && body.institutionId
+        ? body.institutionId
+        : user.institutionId || 'inst_verimark_01';
+
     const newResult = await dbService.createResult({
+      institutionId: instId,
+      examinationId: body.examinationId,
       studentRegNo: body.studentRegNo,
       studentName: body.studentName,
       course: body.course,
@@ -65,6 +88,21 @@ export async function POST(request: Request) {
       marksObtained: marksNum,
       maxMarks: maxMarksNum,
       publicationDate: body.publicationDate || new Date().toISOString(),
+    });
+
+    await dbService.recordAuditLog({
+      institutionId: instId,
+      actorId: user.id,
+      actorName: user.name,
+      actorRole: user.role,
+      action: 'RESULT_CREATED',
+      entityType: 'RESULT',
+      entityId: newResult.id,
+      details: {
+        studentRegNo: newResult.studentRegNo,
+        subject: newResult.subject,
+        marksObtained: newResult.marksObtained,
+      },
     });
 
     if (body.publishImmediately) {

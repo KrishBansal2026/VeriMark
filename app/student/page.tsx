@@ -161,6 +161,10 @@ export default function StudentOverviewPage() {
   const [pwdError, setPwdError] = useState('');
   const [pwdSuccess, setPwdSuccess] = useState('');
   const [pwdSubmitting, setPwdSubmitting] = useState(false);
+  const [fetchError, setFetchError] = useState<{
+    type: 'ACCESS_DENIED' | 'SERVER_ERROR' | 'NETWORK_ERROR';
+    message: string;
+  } | null>(null);
 
   useEffect(() => {
     fetchStudentData();
@@ -169,11 +173,34 @@ export default function StudentOverviewPage() {
   const fetchStudentData = async (cutoff = passingCutoff) => {
     try {
       setLoading(true);
+      setFetchError(null);
       const [authRes, resultsRes, analyticsRes] = await Promise.all([
         fetch('/api/auth/me'),
         fetch('/api/student/results'),
         fetch(`/api/student/analytics?benchmark=${cutoff}`),
       ]);
+
+      if (authRes.status === 401 || resultsRes.status === 401) {
+        window.location.href = `/login?redirect=${encodeURIComponent(window.location.pathname)}`;
+        return;
+      }
+
+      if (authRes.status === 403 || resultsRes.status === 403) {
+        setFetchError({
+          type: 'ACCESS_DENIED',
+          message:
+            'Access Forbidden: Your account is not authorized to access this student portal workspace.',
+        });
+        return;
+      }
+
+      if (!resultsRes.ok) {
+        setFetchError({
+          type: 'SERVER_ERROR',
+          message: `Academic result service returned error status ${resultsRes.status}. Please retry or contact the examination controller.`,
+        });
+        return;
+      }
 
       const authData = await authRes.json();
       const resultsJson = await resultsRes.json();
@@ -185,13 +212,22 @@ export default function StudentOverviewPage() {
 
       if (resultsJson.success) {
         setResultsData(resultsJson);
+      } else {
+        setFetchError({
+          type: 'SERVER_ERROR',
+          message: resultsJson.error || 'Failed to retrieve authenticated student marksheet records.',
+        });
       }
 
       if (analyticsJson.success) {
         setAnalyticsData(analyticsJson);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to load student portal data:', err);
+      setFetchError({
+        type: 'NETWORK_ERROR',
+        message: 'Network disruption encountered while communicating with VeriMark ledger services.',
+      });
     } finally {
       setLoading(false);
     }
@@ -364,6 +400,40 @@ export default function StudentOverviewPage() {
         <div className="flex-1 flex flex-col items-center justify-center space-y-4">
           <div className="w-12 h-12 rounded-full border-2 border-cyan-500/20 border-t-cyan-400 animate-spin" />
           <p className="text-sm font-mono text-cyan-400/90 tracking-wide">Syncing authenticated student ledger records...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (fetchError) {
+    return (
+      <div className="min-h-screen bg-[#081426] text-white flex flex-col">
+        <Header title="Academic Intelligence Overview" subtitle="Personal Academic Performance & Ledger Security" />
+        <div className="flex-1 flex flex-col items-center justify-center p-6 text-center max-w-md mx-auto space-y-4">
+          <div className="w-14 h-14 rounded-2xl bg-rose-500/10 border border-rose-500/30 flex items-center justify-center text-rose-400">
+            <ServerOff className="w-7 h-7" />
+          </div>
+          <div className="space-y-1">
+            <h3 className="text-lg font-bold text-white">
+              {fetchError.type === 'ACCESS_DENIED' ? 'Access Denied (403)' : 'Service Unavailable'}
+            </h3>
+            <p className="text-xs text-slate-400 leading-relaxed">{fetchError.message}</p>
+          </div>
+          <div className="flex items-center space-x-3 pt-2">
+            <button
+              onClick={() => fetchStudentData()}
+              className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold flex items-center space-x-2 transition-all shadow-md"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              <span>Retry Request</span>
+            </button>
+            <Link
+              href="/login"
+              className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition-all border border-[#1c2b50]"
+            >
+              Back to Login
+            </Link>
+          </div>
         </div>
       </div>
     );

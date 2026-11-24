@@ -1,81 +1,166 @@
-# VeriMark – Tamper-Proof Academic Result Ledger
+# VeriMark – Production Multi-Tenant Academic Result Ledger SaaS
 
-> **Code Fuzion 2026 – Problem Statement H8: Tamper-Proof Exam Result Ledger**  
-> A mission-critical, enterprise-grade academic results ledger powered by canonical **SHA-256 seals**, **RFC 6962 Merkle Trees with domain separation**, **Ed25519 digital signatures**, and **two-person cryptographic authorization**.
-
----
-
-## 🏛️ Executive Architecture Overview
-
-Traditional academic databases store student marks in mutable relational tables where any privileged DBA, database administrator, or SQL-injection vulnerability can silently modify grades without leaving a cryptographic trace. 
-
-**VeriMark solves this fundamental vulnerability through a zero-trust cryptographic ledger architecture:**
-
-1. **Deterministic Canonical Serialization & SHA-256**:
-   Every student record is deterministically normalized (keys sorted alphabetically, floating-point marks rounded to 2 decimals, whitespace trimmed) before computing an immutable 256-bit hash seal.
-
-2. **RFC 6962 Domain-Separated Merkle Tree**:
-   Leaf nodes are prefixed with `0x00` and internal nodes with `0x01` prior to hashing, strictly preventing second-preimage collision attacks. Individual Merkle inclusion proofs allow instant verification of any student marksheet.
-
-3. **Independently Protected Signed Checkpoints**:
-   Periodically and upon every result publication or correction, a signed checkpoint containing the Merkle root, event sequence count, and previous checkpoint hash is digitally signed using **Ed25519** and committed to an isolated secondary storage vault (`.verimark_vault/independent_checkpoints.json`). Even a compromised primary database cannot forge a checkpoint.
-
-4. **Two-Person Dual Ed25519 Correction Workflow**:
-   Published examination records cannot be directly edited by any administrator. Any modification requires a registered administrative reason and digital signatures from two distinct authorized signatories:
-   - **Controller of Examinations** (Approver 1)
-   - **Dean of Academic Affairs** (Approver 2)
-   Corrections are executed only after both Ed25519 signatures are verified on the backend, generating an auditable amendment event in the ledger.
-
-5. **Direct Database Tampering Detection & Rollback**:
-   An automated audit engine recalculates every record's hash from raw storage, reconstructs the Merkle tree, and compares the root against the independently authenticated signed checkpoint. If a rogue actor directly modifies a database row, VeriMark flags `TAMPER_DETECTED`, pinpoints the affected student record and exact fields, displays Expected vs Actual hashes, and enables one-click rollback to the authenticated checkpoint.
-
-6. **Instant Public QR Verification**:
-   Every marksheet generates a high-resolution QR code pointing to `/verify/[resultId]`. Scanning the code executes a dynamic, 3-layer cryptographic audit (SHA-256 seal check, Merkle proof traversal, and Ed25519 Authority signature check) in real-time. Zero hardcoded responses.
+> **Commercial-Grade Academic Integrity & Tamper-Evident Examination Ledger Platform**  
+> Designed for Universities, Colleges, and Autonomous Educational Institutions. Powered by **Canonical SHA-256 Seals**, **RFC 6962 Domain-Separated Merkle Trees**, **Native Ed25519 Digital Signatures**, and **Two-Person (M-of-N) Cryptographic Governance**.
 
 ---
 
-## 🛠️ Technology Stack
+## 🏛️ Executive Architecture & SaaS Transformation
 
-- **Framework**: Next.js 14 App Router (React 18, TypeScript)
-- **Styling**: Tailwind CSS (Dark Navy `#070d1e` / `#0b132b` Enterprise Theme)
-- **Icons**: Lucide Icons
-- **Database**: Supabase PostgreSQL (`supabase/schema.sql`) with resilient offline vault persistence
-- **Cryptography**:
-  - SHA-256 with RFC 6962 leaf & internal node domain separation
-  - Custom Merkle Tree with complete inclusion proof generation & verification
+VeriMark transforms traditional mutable academic record databases into a **zero-trust, multi-tenant cryptographic ledger**. In conventional university ERP systems, a rogue database administrator, compromised service account, or SQL-injection exploit can silently modify grades without leaving a verifiable trace. 
+
+**VeriMark eliminates trust assumptions through continuous cryptographic verification:**
+
+```
+                    ┌────────────────────────────────────────────────────────┐
+                    │               INSTITUTION TENANCY LAYER                │
+                    │   Isolated Tenant DB Scopes • Distinct Keypairs • RLS  │
+                    └───────────────────────────┬────────────────────────────┘
+                                                │
+       ┌────────────────────────────────────────┼────────────────────────────────────────┐
+       ▼                                        ▼                                        ▼
+┌──────────────┐                        ┌──────────────┐                        ┌──────────────┐
+│   STUDENTS   │                        │ EXAMINATIONS │                        │ RESULTS/MARKS│
+│  Directory & │                        │  Sessions,   │                        │  Bulk CSV &  │
+│ Rosters (CSV)│                        │  Thresholds  │                        │ Individual   │
+└──────┬───────┘                        └──────┬───────┘                        └──────┬───────┘
+       │                                        │                                      │
+       └────────────────────────────────────────┼──────────────────────────────────────┘
+                                                ▼
+                               ┌─────────────────────────────────┐
+                               │   DETERMINISTIC SERIALIZATION   │
+                               │  Sorted Keys • Normalized Types │
+                               └────────────────┬────────────────┘
+                                                ▼
+                               ┌─────────────────────────────────┐
+                               │       CANONICAL SHA-256         │
+                               │   Immutable Record Seal Hash    │
+                               └────────────────┬────────────────┘
+                                                ▼
+                               ┌─────────────────────────────────┐
+                               │     RFC 6962 MERKLE TREE        │
+                               │ 0x00 Leaf Hash • 0x01 Node Hash │
+                               └────────────────┬────────────────┘
+                                                ▼
+                               ┌─────────────────────────────────┐
+                               │      INDEPENDENT CHECKPOINT     │
+                               │   Ed25519 Signatures • Sequence │
+                               └────────────────┬────────────────┘
+                                                │
+                     ┌──────────────────────────┴──────────────────────────┐
+                     ▼                                                     ▼
+       ┌──────────────────────────┐                          ┌──────────────────────────┐
+       │   TAMPER DETECTION &     │                          │  PUBLIC QR VERIFICATION  │
+       │ ONE-CLICK AUTO-ROLLBACK  │                          │  3-Layer Zero-Hardcode   │
+       └──────────────────────────┘                          └──────────────────────────┘
+```
+
+---
+
+## 🔐 Core Security & Governance Pillars
+
+### 1. Multi-Tenant Enterprise SaaS Architecture
+- **Tenant Isolation**: Every result, student, examination, ledger event, checkpoint, and audit log is strictly scoped by `institution_id`.
+- **Hierarchical RBAC**:
+  - `SUPER_ADMIN`: Cross-tenant platform provisioning and institution onboarding.
+  - `INSTITUTION_ADMIN` / `ADMIN`: Institution-level user administration, student rosters, exam management.
+  - `EXAM_CONTROLLER`: Signer 1 for two-person mark corrections.
+  - `ACADEMIC_DEAN`: Signer 2 for two-person mark corrections.
+  - `AUDITOR`: Independent read-only verification of cryptographic checkpoints and tamper detection.
+  - `FACULTY`: Subject-level evaluation views.
+  - `STUDENT`: Read-only authenticated access to personal marksheet, semester history, and QR verification.
+
+### 2. Deterministic Serialization & SHA-256
+Every result payload is canonically ordered with alphabetical keys, numeric normalization, and normalized timestamps prior to computing the 256-bit SHA-256 seal. No two records can produce the same hash, and no field can be altered without invalidating the seal.
+
+### 3. RFC 6962 Domain-Separated Merkle Trees
+Leaf hashes are prefixed with domain byte `0x00` (`SHA-256(0x00 || recordHash)`), and internal branch nodes are prefixed with `0x01` (`SHA-256(0x01 || leftChild || rightChild)`). This strictly prevents second-preimage collision attacks and length-extension vulnerabilities.
+
+### 4. Two-Person Rule (M-of-N) Dual Ed25519 Signatures
+Under university examination statutes, no single administrator can modify published marks. Corrections require:
+1. Formal administrative reason and discrepancy filing.
+2. Independent Ed25519 digital signature from the **Controller of Examinations**.
+3. Independent Ed25519 digital signature from the **Dean of Academic Affairs**.
+4. Duplicate signatures by the same officer or self-approval by the requester are strictly blocked at the backend.
+
+### 5. Automated Tamper Detection & Checkpoint Rollback
+A background audit engine recalculates every database row's hash, recomputes the Merkle tree, and compares the root against the independently authenticated signed checkpoint. If a rogue DBA alters a row directly:
+- The system immediately triggers a `CRITICAL: TAMPER_DETECTED` alert.
+- Pinpoints the tampered student, subject, and exact field values.
+- Displays **Expected Hash vs Actual Recalculated Hash**.
+- Enables one-click rollback to restore database integrity from verified checkpoints.
+
+### 6. Brute-Force Rate Limiting & Token Revocation
+- Sliding-window rate limiter (15 attempts / 15 minutes) protecting `/api/auth/login`.
+- Immediate server-side token revocation on logout (`/api/auth/logout`) stored in persistent blacklist.
+- Mandatory first-login password update for temporary activation credentials.
+
+---
+
+## 🛠️ Complete Technology Stack
+
+- **Frontend & Full-Stack**: Next.js 14 App Router (React 18, TypeScript)
+- **Styling**: Tailwind CSS with enterprise Dark Navy (`#070d1e` / `#0b132b`) theme
+- **Database Architecture**:
+  - Primary: Supabase PostgreSQL (`supabase/schema.sql` and `supabase/migrations/001_saas_schema.sql`) with Row-Level Security (RLS) policies.
+  - Resilient Fallback: Isolated local vault storage adapter ensuring zero deployment failures on serverless runtimes.
+- **Cryptography Engine**:
+  - SHA-256 with RFC 6962 domain separation
+  - Custom binary Merkle Tree with complete audit path traversal
   - Native Node.js 32-byte Ed25519 keypair generation, signing, and verification (RFC 8410 / RFC 8032)
-- **QR Codes**: `qrcode` vector engine
-- **Testing**: Vitest automated test suite (22 unit, integration, and security tests)
+  - scrypt / PBKDF2 password hashing with cryptographically secure random salts
+- **Verification Engine**: Dynamic vector QR code generation pointing to `/verify/[resultId]` with zero hardcoded responses.
+- **Automated Test Suite**: Vitest (193 automated tests across 12 test files).
 
 ---
 
-## 🚀 Quick Start & Installation
+## 📂 Navigation & Page Directory
+
+| Route | Role Access | Description |
+|---|---|---|
+| `/` | Admin, Auditor, Faculty | Institutional Examination Dashboard with real-time stats and audit stream |
+| `/students` | Admin, Institution Admin | Student Directory: single enrollment, department filters, bulk CSV import/export |
+| `/examinations` | Admin, Exam Controller | Examination Management: session tracking, subject catalogue, thresholds |
+| `/results` | Admin, Institution Admin | Result Management: mark entries, bulk CSV marksheet upload, CSV export |
+| `/corrections` | Controller, Dean, Admin | Two-person dual-signer correction workflow with Ed25519 verification |
+| `/users` | Admin, Institution Admin | User Management: staff provisioning, activation toggle, temporary passwords |
+| `/ledger` | Admin, Auditor | Cryptographic Ledger Explorer: event chain, checkpoints, Merkle roots |
+| `/audit` | Admin, Auditor | Security Audit Console: tamper detection, stress-test tools, checkpoint rollback |
+| `/analytics` | Admin, Faculty | Academic performance intelligence, grade distribution, pass/fail diagnostics |
+| `/student` | Student | Student Academic Intelligence Overview with benchmarks and filters |
+| `/student/results` | Student | Student published results list with QR verification codes |
+| `/student/marksheet` | Student | Official digital marksheet certificate with print-to-PDF formatting |
+| `/student/history` | Student | Chronological examination timeline and semester breakdown |
+| `/student/corrections`| Student | Student audit trail of statutory mark amendment requests |
+| `/verify/[id]` | Public | 3-layer cryptographic verification page for scanned QR codes |
+
+---
+
+## 🚀 Installation & Local Development
 
 ### Prerequisites
-- Node.js v18.0.0 or higher (v20+ recommended)
+- Node.js 18.x or 20.x
 - npm or pnpm
 
-### 1. Clone Repository & Install Dependencies
+### 1. Clone & Install
 ```bash
-git clone https://github.com/your-username/verimark.git
-cd verimark
+git clone https://github.com/KrishBansal2026/VeriMark.git
+cd VeriMark
 npm install
 ```
 
-### 2. Configure Environment Variables (Optional)
-Copy `.env.example` to `.env`:
-```bash
-cp .env.example .env
-```
-*Note: VeriMark includes a zero-config vault engine that automatically generates and protects local Ed25519 keys and checkpoints out-of-the-box for development and hackathon evaluations.*
-
-### 3. Run Automated Cryptographic & Security Tests
+### 2. Run Test Suite
 ```bash
 npm test
 ```
-*Executes all 22 automated positive and negative test cases covering SHA-256 determinism, RFC 6962 Merkle tree proofs, Ed25519 signatures, dual-signer enforcement, direct DB tampering detection, and checkpoint rollbacks.*
+*Executes all 193 automated unit, integration, RBAC, adversarial, and cryptographic tests.*
 
-### 4. Launch Development Server
+### 3. Build for Production
+```bash
+npm run build
+```
+
+### 4. Start Development Server
 ```bash
 npm run dev
 ```
@@ -83,67 +168,36 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 ---
 
-## 📋 5-Minute Hackathon Demonstration Script (For Judges)
+## 🔑 Pre-Configured Test Credentials
 
-### Minute 1: The Core Problem & Admin Dashboard (0:00 - 1:00)
-1. Open the **Dashboard** at `http://localhost:3000`.
-2. Point out the **Active Signed Checkpoint Banner**: displays the current Merkle root, event sequence number, and Ed25519 signature status.
-3. Show the pre-seeded academic results across 5 engineering students.
-4. Explain how VeriMark eliminates database trust assumptions through canonical SHA-256 seals and Merkle inclusion proofs.
-
-### Minute 2: Publishing a Student Result & QR Code (1:00 - 2:00)
-1. Navigate to **Student Results** (`/results`).
-2. Click **"Add Student Result"**.
-3. Enter student details (e.g., `CF2026-CSE-109`, `Priyanshu Sen`, `Operating Systems`, `92.5 Marks`).
-4. Ensure *"Publish and seal immediately into append-only Merkle ledger"* is checked. Click **"Commit Record"**.
-5. Show that a new deterministic SHA-256 hash was generated, a new leaf was appended to the Merkle tree, and Checkpoint sequence incremented.
-6. Click the **"QR"** button for the student. Show the high-res verification QR code.
-
-### Minute 3: Public QR Verification (Zero Hardcoded Checks) (2:00 - 3:00)
-1. Click **"Open Public Verification Page"** (or visit `/verify/[id]`).
-2. Point out the dynamic 3-layer verification checklist:
-   - **Layer 1**: Recalculated SHA-256 record hash vs expected seal.
-   - **Layer 2**: Merkle inclusion proof traversal up the tree.
-   - **Layer 3**: Master Ledger Authority Ed25519 digital signature check.
-3. Show that the verification status is dynamically evaluated as **VERIFIED**.
-
-### Minute 4: Direct Database Tampering Detection (3:00 - 4:00)
-1. Navigate to **Security Audit** (`/audit`).
-2. Note that initial state is **SECURE** (100% integrity).
-3. Under the **Hackathon Stress-Test Console**, click **"1. Simulate Direct Database Tampering"**.
-4. The system directly mutates a student's marks in the raw database (simulating a rogue DBA changing marks from 76 to 99.5).
-5. Watch the system immediately flip to **TAMPER_DETECTED** in bold red alert!
-6. Show the exact audit finding: identifies the affected student, pinpoints the discrepancy, and displays **Expected Hash vs Actual Recalculated Hash** side-by-side!
-7. Re-open that student's public verification page: it now flashes **TAMPERED**!
-
-### Minute 5: Two-Person Correction & Rollback (4:00 - 5:00)
-1. Back on the **Security Audit** page, click **"2. Restore to Signed Checkpoint"** to showcase rollback to the authentic vault checkpoint. Status returns to **SECURE**.
-2. Navigate to **Dual Approvals** (`/corrections`).
-3. Demonstrate a legitimate administrative mark correction:
-   - Step 1: Admin registers recount request with justification.
-   - Step 2: **Exam Controller** reviews diff and clicks *"Sign as Exam Controller"*. Status becomes `1/2 SIGNATURES VERIFIED`.
-   - Step 3: Show that duplicate signing is blocked.
-   - Step 4: **Academic Dean** clicks *"Sign as Academic Dean"*.
-   - Result: Both Ed25519 signatures verified on the backend, marks updated legally, and a new signed checkpoint is sealed!
+| Role | Email | Password | Description |
+|---|---|---|---|
+| **SaaS Super Admin** | `superadmin@verimark.saas` | `SuperAdmin@2026!` | Multi-tenant platform supervisor |
+| **Institution Admin** | `admin@verimark.edu` | `Admin@2026!` | Chief Academic Officer |
+| **Exam Controller** | `controller@verimark.edu` | `Controller@2026!` | Signatory 1 for dual approvals |
+| **Academic Dean** | `dean@verimark.edu` | `Dean@2026!` | Signatory 2 for dual approvals |
+| **Independent Auditor** | `auditor@verimark.edu` | `Auditor@2026!` | Read-only ledger auditor |
+| **Faculty Member** | `faculty@verimark.edu` | `Faculty@2026!` | Subject evaluation views |
+| **Student (Aarav Sharma)** | `aarav.sharma@student.verimark.edu` | `Act#Aarav$2026!` | Student: 88/100 Cryptography (CF2026-CSE-101) |
 
 ---
 
-## 🔒 Security Compliance Checklist (Problem H8)
+## 🧪 Comprehensive Test Coverage (193 Tests)
 
-| Mandatory Requirement | Status | Implementation Details |
-|---|---|---|
-| **Admin Result Management** | ✅ Implemented | Server-validated student record creation, publishing, and SHA-256 hashing. |
-| **RFC 6962 Merkle Tree** | ✅ Implemented | Domain separation (`0x00` leaf, `0x01` internal), inclusion proofs, odd-leaf handling. |
-| **Ed25519 Signed Checkpoints** | ✅ Implemented | Checkpoints signed via native 32-byte Ed25519 keys; keys protected on server only. |
-| **Independent Checkpoint Store** | ✅ Implemented | Checkpoints committed to isolated vault (`independent_checkpoints.json`). |
-| **Two-Person Approval Workflow** | ✅ Implemented | Distinct Exam Controller & Academic Dean Ed25519 signatures required for corrections. |
-| **Duplicate Approval Prevention** | ✅ Implemented | Enforced on backend: identical role/approver duplicate signatures rejected. |
-| **Public QR Verification** | ✅ Implemented | Unique QR codes point to `/verify/[id]`; live cryptographic checks with zero hardcoding. |
-| **Direct DB Tampering Detection**| ✅ Implemented | Detects direct row modifications, shows hash diffs, and supports checkpoint rollback. |
-| **PostgreSQL Schema** | ✅ Implemented | Complete Supabase DDL migrations in `supabase/schema.sql` with RLS policies. |
-| **Automated Testing Suite** | ✅ Implemented | 22 comprehensive Vitest unit and integration tests passing. |
+- `tests/crypto.test.ts` (15 tests): Canonical serialization, RFC 6962 leaf/node domain separation, Ed25519 signing.
+- `tests/adversarial.test.ts` (24 tests): Token forgery, expired tokens, self-approval bypasses, private key leak prevention.
+- `tests/priority_remediation.test.ts` (12 tests): Backdoor hardening, audit endpoint authorization, WORM claim compliance.
+- `tests/security_remediation.test.ts` (20 tests): Server-side RBAC, unauthorized mutations, token tamper detection.
+- `tests/production_security_rbac.test.ts` (31 tests): Production zero-backdoor isolation, session cookie safety.
+- `tests/student_portal.test.ts` (30 tests): First-login password updates, complex password policy, marksheet verification.
+- `tests/student_credentials_audit.test.ts` (12 tests): Credential safety, no hardcoded secrets in client bundles.
+- `tests/workflow_and_tampering.test.ts` (7 tests): End-to-end publishing, dual approvals, simulated DB tampering & rollback.
+- `tests/analytics_dashboard.test.ts` (15 tests): Benchmark calculations, pass/fail aggregations, semester history.
+- `tests/serverless_storage.test.ts` (4 tests): Path safety, serverless filesystem fallback resilience.
+- `tests/audit_tamper_detection.test.ts` (16 tests): Deep tamper detection, hash mismatch reporting, rollback integrity.
+- `tests/saas_features.test.ts` (7 tests): Multi-tenant APIs, student rosters, exam management, batch CSV import, rate limiter.
 
 ---
 
 ## 📜 License
-Developed for **Code Fuzion 2026 Hackathon**. Open-source under MIT License.
+Developed for **Code Fuzion 2026**. Open-source under MIT License.

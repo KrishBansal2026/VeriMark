@@ -66,7 +66,8 @@ export async function middleware(request: NextRequest) {
     pathname.includes('/qr') ||
     pathname === '/api/auth/login' ||
     pathname === '/api/auth/logout' ||
-    pathname === '/api/auth/me'
+    pathname === '/api/auth/me' ||
+    pathname === '/api/health'
   ) {
     return NextResponse.next();
   }
@@ -105,11 +106,21 @@ export async function middleware(request: NextRequest) {
     const isInstitutionalPage =
       pathname === '/' ||
       pathname === '/results' ||
+      pathname.startsWith('/results') ||
+      pathname === '/students' ||
+      pathname.startsWith('/students') ||
+      pathname === '/examinations' ||
+      pathname.startsWith('/examinations') ||
+      pathname === '/users' ||
+      pathname.startsWith('/users') ||
       pathname === '/analytics' ||
       pathname.startsWith('/analytics') ||
       pathname === '/ledger' ||
+      pathname.startsWith('/ledger') ||
       pathname === '/corrections' ||
-      pathname === '/audit';
+      pathname.startsWith('/corrections') ||
+      pathname === '/audit' ||
+      pathname.startsWith('/audit');
 
     if (isInstitutionalPage) {
       const deniedUrl = new URL('/access-denied', request.url);
@@ -121,6 +132,9 @@ export async function middleware(request: NextRequest) {
     // Prohibit student access to institutional admin APIs
     const isInstitutionalApi =
       pathname.startsWith('/api/results') ||
+      pathname.startsWith('/api/students') ||
+      pathname.startsWith('/api/examinations') ||
+      pathname.startsWith('/api/users') ||
       pathname.startsWith('/api/analytics') ||
       pathname.startsWith('/api/corrections') ||
       pathname.startsWith('/api/audit') ||
@@ -147,7 +161,13 @@ export async function middleware(request: NextRequest) {
 
   // Specific institutional page privilege gates
   if (pathname === '/audit' || pathname.startsWith('/api/audit')) {
-    if (role !== 'ADMIN' && role !== 'AUDITOR') {
+    const isAuditAuthorized =
+      role === 'ADMIN' ||
+      role === 'INSTITUTION_ADMIN' ||
+      role === 'SUPER_ADMIN' ||
+      role === 'AUDITOR';
+
+    if (!isAuditAuthorized) {
       if (pathname.startsWith('/api/')) {
         return NextResponse.json(
           { success: false, error: `Forbidden: Role '${role}' lacks audit authority` },

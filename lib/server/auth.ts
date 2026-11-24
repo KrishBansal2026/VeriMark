@@ -1,6 +1,7 @@
 import { createHmac, timingSafeEqual, scryptSync, randomBytes } from 'crypto';
 import { AuthUser, UserRole } from '../types';
 import { getServerKeys } from './keys';
+import { dbService } from '../storage/db';
 
 export class AuthError extends Error {
   statusCode: number;
@@ -14,8 +15,9 @@ export class AuthError extends Error {
 // Server-side session signing secret
 const SESSION_SECRET = process.env.ADMIN_SECRET_TOKEN || 'verimark_session_hmac_secret_key_cf2026_production';
 
-interface StoredUser {
+export interface StoredUser {
   id: string;
+  institutionId?: string;
   email: string;
   name: string;
   role: UserRole;
@@ -23,6 +25,7 @@ interface StoredUser {
   salt: string;
   studentRegNo?: string;
   mustChangePassword?: boolean;
+  isActive?: boolean;
 }
 
 // Deterministically derive password hash with scrypt
@@ -30,47 +33,80 @@ export function hashPassword(password: string, salt: string): string {
   return scryptSync(password, salt, 64).toString('hex');
 }
 
-// Pre-seeded authorized institutional directory
-const INSTITUTIONAL_USERS: StoredUser[] = [
+// Pre-seeded authorized institutional directory (exported for test compatibility)
+export const INSTITUTIONAL_USERS: StoredUser[] = [
+  {
+    id: 'usr_super_00',
+    email: 'superadmin@verimark.saas',
+    name: 'Global SaaS Administrator',
+    role: 'SUPER_ADMIN',
+    salt: 'salt_super_cf2026',
+    passwordHash: hashPassword('SuperAdmin@2026!', 'salt_super_cf2026'),
+    mustChangePassword: false,
+    isActive: true,
+  },
   {
     id: 'usr_admin_01',
+    institutionId: 'inst_verimark_01',
     email: 'admin@verimark.edu',
     name: 'Chief Academic Officer',
     role: 'ADMIN',
     salt: 'salt_admin_cf2026',
     passwordHash: hashPassword('Admin@2026!', 'salt_admin_cf2026'),
+    mustChangePassword: false,
+    isActive: true,
   },
   {
     id: 'usr_controller_02',
+    institutionId: 'inst_verimark_01',
     email: 'controller@verimark.edu',
     name: 'Dr. Robert Vance',
     role: 'EXAM_CONTROLLER',
     salt: 'salt_ctrl_cf2026',
     passwordHash: hashPassword('Controller@2026!', 'salt_ctrl_cf2026'),
+    mustChangePassword: false,
+    isActive: true,
   },
   {
     id: 'usr_dean_03',
+    institutionId: 'inst_verimark_01',
     email: 'dean@verimark.edu',
     name: 'Prof. Margaret Hamilton',
     role: 'ACADEMIC_DEAN',
     salt: 'salt_dean_cf2026',
     passwordHash: hashPassword('Dean@2026!', 'salt_dean_cf2026'),
+    mustChangePassword: false,
+    isActive: true,
   },
   {
     id: 'usr_auditor_04',
+    institutionId: 'inst_verimark_01',
     email: 'auditor@verimark.edu',
     name: 'Dr. Elena Rostova',
     role: 'AUDITOR',
     salt: 'salt_audit_cf2026',
     passwordHash: hashPassword('Auditor@2026!', 'salt_audit_cf2026'),
+    mustChangePassword: false,
+    isActive: true,
+  },
+  {
+    id: 'usr_faculty_05',
+    institutionId: 'inst_verimark_01',
+    email: 'faculty@verimark.edu',
+    name: 'Dr. Alan Turing',
+    role: 'FACULTY',
+    salt: 'salt_faculty_cf2026',
+    passwordHash: hashPassword('Faculty@2026!', 'salt_faculty_cf2026'),
+    mustChangePassword: false,
+    isActive: true,
   },
 ];
 
 // Pre-provisioned university student directory matching the 5 published records
-// Each provisioned with a unique temporary activation credential and forced password change flag
 export const STUDENT_USERS: StoredUser[] = [
   {
     id: 'usr_student_101',
+    institutionId: 'inst_verimark_01',
     email: 'aarav.sharma@student.verimark.edu',
     name: 'Aarav Sharma',
     role: 'STUDENT',
@@ -78,9 +114,11 @@ export const STUDENT_USERS: StoredUser[] = [
     salt: 'salt_stud_101_cf2026',
     passwordHash: hashPassword('Act#Aarav$2026!', 'salt_stud_101_cf2026'),
     mustChangePassword: true,
+    isActive: true,
   },
   {
     id: 'usr_student_102',
+    institutionId: 'inst_verimark_01',
     email: 'bhavna.reddy@student.verimark.edu',
     name: 'Bhavna Reddy',
     role: 'STUDENT',
@@ -88,9 +126,11 @@ export const STUDENT_USERS: StoredUser[] = [
     salt: 'salt_stud_102_cf2026',
     passwordHash: hashPassword('Act#Bhavna$2026!', 'salt_stud_102_cf2026'),
     mustChangePassword: true,
+    isActive: true,
   },
   {
     id: 'usr_student_103',
+    institutionId: 'inst_verimark_01',
     email: 'chetan.verma@student.verimark.edu',
     name: 'Chetan Verma',
     role: 'STUDENT',
@@ -98,9 +138,11 @@ export const STUDENT_USERS: StoredUser[] = [
     salt: 'salt_stud_103_cf2026',
     passwordHash: hashPassword('Act#Chetan$2026!', 'salt_stud_103_cf2026'),
     mustChangePassword: true,
+    isActive: true,
   },
   {
     id: 'usr_student_104',
+    institutionId: 'inst_verimark_01',
     email: 'divya.nair@student.verimark.edu',
     name: 'Divya Nair',
     role: 'STUDENT',
@@ -108,9 +150,11 @@ export const STUDENT_USERS: StoredUser[] = [
     salt: 'salt_stud_104_cf2026',
     passwordHash: hashPassword('Act#Divya$2026!', 'salt_stud_104_cf2026'),
     mustChangePassword: true,
+    isActive: true,
   },
   {
     id: 'usr_student_105',
+    institutionId: 'inst_verimark_01',
     email: 'eshan.roy@student.verimark.edu',
     name: 'Eshan Roy',
     role: 'STUDENT',
@@ -118,10 +162,11 @@ export const STUDENT_USERS: StoredUser[] = [
     salt: 'salt_stud_105_cf2026',
     passwordHash: hashPassword('Act#Eshan$2026!', 'salt_stud_105_cf2026'),
     mustChangePassword: true,
+    isActive: true,
   },
 ];
 
-// In-memory runtime store for updated passwords
+// Runtime store for updated passwords
 const DYNAMIC_USER_OVERRIDES = new Map<string, { passwordHash: string; salt: string; mustChangePassword: boolean }>();
 
 /**
@@ -131,6 +176,7 @@ const DYNAMIC_USER_OVERRIDES = new Map<string, { passwordHash: string; salt: str
 export function createSessionToken(user: AuthUser, expiresInHours = 24): string {
   const payload = {
     userId: user.id,
+    institutionId: user.institutionId || 'inst_verimark_01',
     email: user.email,
     name: user.name,
     role: user.role,
@@ -174,6 +220,7 @@ export function verifySessionToken(token: string): AuthUser | null {
 
     return {
       id: payload.userId,
+      institutionId: payload.institutionId || 'inst_verimark_01',
       email: payload.email,
       name: payload.name,
       role: payload.role,
@@ -193,16 +240,25 @@ export async function authenticateCredentials(
   password: string
 ): Promise<{ user: AuthUser; token: string }> {
   const normalizedEmail = email.trim().toLowerCase();
-  const allUsers = [...INSTITUTIONAL_USERS, ...STUDENT_USERS];
-  const stored = allUsers.find((u) => u.email.toLowerCase() === normalizedEmail);
+
+  // 1. Check persistent database
+  const dbUser = await dbService.getUserByEmail(normalizedEmail);
+  const allStaticUsers = [...INSTITUTIONAL_USERS, ...STUDENT_USERS];
+  const staticUser = allStaticUsers.find((u) => u.email.toLowerCase() === normalizedEmail);
+
+  const stored = dbUser || staticUser;
 
   if (!stored) {
     throw new AuthError(401, 'Invalid credentials');
   }
 
+  if (stored.isActive === false) {
+    throw new AuthError(403, 'Account is inactive. Please contact your institution administrator.');
+  }
+
   // Check for dynamic runtime password override
   const override = DYNAMIC_USER_OVERRIDES.get(stored.id);
-  const activeSalt = override ? override.salt : stored.salt;
+  const activeSalt = override ? override.salt : (stored.salt || (stored as any).passwordSalt || 'default_salt_cf2026');
   const activeHash = override ? override.passwordHash : stored.passwordHash;
   const mustChangePassword = override ? override.mustChangePassword : (stored.mustChangePassword ?? false);
 
@@ -226,6 +282,7 @@ export async function authenticateCredentials(
 
   const user: AuthUser = {
     id: stored.id,
+    institutionId: stored.institutionId || 'inst_verimark_01',
     email: stored.email,
     name: stored.name,
     role: stored.role,
@@ -239,22 +296,25 @@ export async function authenticateCredentials(
 }
 
 /**
- * Changes a user's password securely, clearing mustChangePassword requirement.
+ * Changes a user's password securely, clearing mustChangePassword requirement and persisting to DB.
  */
 export async function changeUserPassword(
   userId: string,
   currentPassword: string,
   newPassword: string
 ): Promise<{ user: AuthUser; token: string }> {
-  const allUsers = [...INSTITUTIONAL_USERS, ...STUDENT_USERS];
-  const stored = allUsers.find((u) => u.id === userId);
+  const dbUser = await dbService.getUserById(userId);
+  const allStaticUsers = [...INSTITUTIONAL_USERS, ...STUDENT_USERS];
+  const staticUser = allStaticUsers.find((u) => u.id === userId);
+  const stored = dbUser || staticUser;
+
   if (!stored) {
     throw new AuthError(404, 'User account not found');
   }
 
   // Verify current password
   const override = DYNAMIC_USER_OVERRIDES.get(stored.id);
-  const activeSalt = override ? override.salt : stored.salt;
+  const activeSalt = override ? override.salt : (stored.salt || (stored as any).passwordSalt || 'default_salt_cf2026');
   const activeHash = override ? override.passwordHash : stored.passwordHash;
 
   const computedHash = hashPassword(currentPassword, activeSalt);
@@ -286,8 +346,12 @@ export async function changeUserPassword(
     mustChangePassword: false,
   });
 
+  // Persist to database
+  await dbService.updateUserPassword(stored.id, newHash, newSalt);
+
   const updatedUser: AuthUser = {
     id: stored.id,
+    institutionId: stored.institutionId || 'inst_verimark_01',
     email: stored.email,
     name: stored.name,
     role: stored.role,
@@ -325,7 +389,7 @@ export async function getAuthenticatedUser(request: Request): Promise<AuthUser |
 
 /**
  * Enforces server-side authentication and role-based access control (RBAC).
- * Throws AuthError(401) if unauthenticated, AuthError(403) if role not permitted.
+ * Supports SUPER_ADMIN inheriting all permissions.
  */
 export async function requireAuth(
   request: Request,
@@ -337,7 +401,14 @@ export async function requireAuth(
   }
 
   if (allowedRoles && allowedRoles.length > 0) {
-    if (!allowedRoles.includes(user.role)) {
+    // SUPER_ADMIN and INSTITUTION_ADMIN can access ADMIN-level routes
+    const hasRole =
+      allowedRoles.includes(user.role) ||
+      (user.role === 'SUPER_ADMIN') ||
+      (user.role === 'INSTITUTION_ADMIN' && allowedRoles.includes('ADMIN')) ||
+      (user.role === 'ADMIN' && allowedRoles.includes('INSTITUTION_ADMIN'));
+
+    if (!hasRole) {
       throw new AuthError(
         403,
         `Access denied. Role '${user.role}' is not authorized for this action. Allowed: ${allowedRoles.join(', ')}`
@@ -358,6 +429,7 @@ export function getDemoTokenForRole(role: UserRole, studentRegNo?: string): { us
       : STUDENT_USERS[0];
     const user: AuthUser = {
       id: student.id,
+      institutionId: student.institutionId || 'inst_verimark_01',
       email: student.email,
       name: student.name,
       role: 'STUDENT',
@@ -373,6 +445,7 @@ export function getDemoTokenForRole(role: UserRole, studentRegNo?: string): { us
   }
   const user: AuthUser = {
     id: userRecord.id,
+    institutionId: userRecord.institutionId || 'inst_verimark_01',
     email: userRecord.email,
     name: userRecord.name,
     role: userRecord.role,

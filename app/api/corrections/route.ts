@@ -4,9 +4,23 @@ import { requireAuth, AuthError } from '@/lib/server/auth';
 
 export async function GET(request: Request) {
   try {
-    // Only authorized institutional staff can view the full correction request queue
-    await requireAuth(request, ['ADMIN', 'EXAM_CONTROLLER', 'ACADEMIC_DEAN', 'AUDITOR']);
-    const requests = await dbService.getCorrectionRequests();
+    const user = await requireAuth(request, [
+      'ADMIN',
+      'INSTITUTION_ADMIN',
+      'SUPER_ADMIN',
+      'EXAM_CONTROLLER',
+      'ACADEMIC_DEAN',
+      'AUDITOR',
+    ]);
+
+    const url = new URL(request.url);
+    const requestedInst = url.searchParams.get('institutionId');
+    const instId =
+      user.role === 'SUPER_ADMIN' && requestedInst
+        ? requestedInst
+        : user.institutionId || 'inst_verimark_01';
+
+    const requests = await dbService.getCorrectionRequests(instId);
     return NextResponse.json({ success: true, requests });
   } catch (error: any) {
     if (error instanceof AuthError) {
@@ -18,8 +32,13 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    // Authenticated user (Admin or Institutional Officer)
-    const user = await requireAuth(request, ['ADMIN', 'EXAM_CONTROLLER', 'ACADEMIC_DEAN']);
+    const user = await requireAuth(request, [
+      'ADMIN',
+      'INSTITUTION_ADMIN',
+      'SUPER_ADMIN',
+      'EXAM_CONTROLLER',
+      'ACADEMIC_DEAN',
+    ]);
 
     const body = await request.json();
 
@@ -30,11 +49,30 @@ export async function POST(request: Request) {
       );
     }
 
+    const instId = user.institutionId || 'inst_verimark_01';
+
     const newRequest = await dbService.createCorrectionRequest({
       resultId: body.resultId,
       proposedMarks: Number(body.proposedMarks),
       reason: body.reason,
       requester: user,
+      institutionId: instId,
+    });
+
+    await dbService.recordAuditLog({
+      institutionId: instId,
+      actorId: user.id,
+      actorName: user.name,
+      actorRole: user.role,
+      action: 'CORRECTION_REQUESTED',
+      entityType: 'CORRECTION',
+      entityId: newRequest.id,
+      details: {
+        resultId: newRequest.resultId,
+        originalMarks: newRequest.originalMarks,
+        proposedMarks: newRequest.proposedMarks,
+        reason: newRequest.reason,
+      },
     });
 
     return NextResponse.json({ success: true, request: newRequest }, { status: 201 });

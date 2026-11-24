@@ -4,10 +4,31 @@
 
 export type ResultStatus = 'draft' | 'published' | 'corrected' | 'revoked';
 
-export type UserRole = 'ADMIN' | 'EXAM_CONTROLLER' | 'ACADEMIC_DEAN' | 'AUDITOR' | 'STUDENT';
+export type UserRole = 
+  | 'SUPER_ADMIN' 
+  | 'INSTITUTION_ADMIN' 
+  | 'ADMIN' 
+  | 'EXAM_CONTROLLER' 
+  | 'ACADEMIC_DEAN' 
+  | 'AUDITOR' 
+  | 'FACULTY' 
+  | 'STUDENT';
+
+export interface Institution {
+  id: string;
+  code: string;
+  name: string;
+  domain: string;
+  logoUrl?: string;
+  themeColor?: string;
+  status: 'active' | 'suspended' | 'pending';
+  createdAt: string;
+  updatedAt: string;
+}
 
 export interface AuthUser {
   id: string;
+  institutionId?: string;
   email: string;
   name: string;
   role: UserRole;
@@ -16,8 +37,64 @@ export interface AuthUser {
   mustChangePassword?: boolean;
 }
 
+export interface StudentProfile {
+  id: string;
+  institutionId: string;
+  regNo: string;
+  fullName: string;
+  email: string;
+  course: string;
+  department: string;
+  batchYear: string;
+  status: 'active' | 'graduated' | 'suspended';
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Examination {
+  id: string;
+  institutionId: string;
+  examCode: string;
+  examName: string;
+  semester: string;
+  academicYear: string;
+  department?: string;
+  status: 'draft' | 'scheduled' | 'completed' | 'published' | 'archived';
+  conductedDate: string;
+  createdAt: string;
+}
+
+export interface SubjectItem {
+  id: string;
+  institutionId: string;
+  subjectCode: string;
+  subjectName: string;
+  department: string;
+  credits: number;
+  maxMarks: number;
+  passingMarks: number;
+  createdAt: string;
+}
+
+export interface AuditLogEntry {
+  id: string;
+  institutionId?: string;
+  actorId: string;
+  actorName: string;
+  actorRole: string;
+  action: string;
+  entityType?: string;
+  entityId?: string;
+  details?: Record<string, any>;
+  ipAddress?: string;
+  userAgent?: string;
+  timestamp: string;
+}
+
 export interface StudentResult {
   id: string;
+  institutionId?: string;
+  examinationId?: string;
   studentRegNo: string;
   studentName: string;
   course: string;
@@ -66,6 +143,7 @@ export type LedgerEventType =
 
 export interface LedgerEvent {
   id: string;
+  institutionId?: string;
   sequenceNumber: number;
   eventType: LedgerEventType;
   recordId: string;
@@ -79,6 +157,7 @@ export interface LedgerEvent {
 
 export interface LedgerCheckpoint {
   id: string;
+  institutionId?: string;
   sequenceNumber: number;
   merkleRoot: string;
   eventCount: number;
@@ -113,6 +192,7 @@ export interface CorrectionApproval {
 
 export interface CorrectionRequest {
   id: string;
+  institutionId?: string;
   resultId: string;
   studentRegNo: string;
   subject: string;

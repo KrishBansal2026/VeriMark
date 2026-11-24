@@ -22,18 +22,52 @@ export default function StudentCorrectionsPage() {
   const [corrections, setCorrections] = useState<CorrectionRequest[]>([]);
   const [studentRegNo, setStudentRegNo] = useState<string>('');
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<{
+    type: 'ACCESS_DENIED' | 'SERVER_ERROR' | 'NETWORK_ERROR';
+    message: string;
+  } | null>(null);
 
   const fetchCorrections = async () => {
     setLoading(true);
+    setFetchError(null);
     try {
       const res = await fetch('/api/student/corrections');
+      if (res.status === 401) {
+        window.location.href = `/login?redirect=${encodeURIComponent(window.location.pathname)}`;
+        return;
+      }
+      if (res.status === 403) {
+        setFetchError({
+          type: 'ACCESS_DENIED',
+          message:
+            'Access Forbidden: Your account is not authorized to access this student portal workspace.',
+        });
+        return;
+      }
+      if (!res.ok) {
+        setFetchError({
+          type: 'SERVER_ERROR',
+          message: `Correction service returned error status ${res.status}. Please retry or contact the examinations controller.`,
+        });
+        return;
+      }
+
       const data = await res.json();
       if (data.success) {
         setCorrections(data.corrections || []);
         setStudentRegNo(data.studentRegNo || '');
+      } else {
+        setFetchError({
+          type: 'SERVER_ERROR',
+          message: data.error || 'Failed to retrieve correction records.',
+        });
       }
     } catch (err) {
       console.error('Failed to load correction history:', err);
+      setFetchError({
+        type: 'NETWORK_ERROR',
+        message: 'Network disruption encountered while communicating with VeriMark ledger services.',
+      });
     } finally {
       setLoading(false);
     }
@@ -80,6 +114,21 @@ export default function StudentCorrectionsPage() {
           {loading ? (
             <div className="py-20 text-center text-slate-400 animate-pulse text-sm">
               Loading cryptographic amendment records...
+            </div>
+          ) : fetchError ? (
+            <div className="p-8 text-center bg-[#0b132b] border border-rose-500/30 rounded-xl space-y-3">
+              <div className="text-rose-400 font-bold text-sm">
+                {fetchError.type === 'ACCESS_DENIED'
+                  ? 'Access Denied (403)'
+                  : 'Connection / Service Error'}
+              </div>
+              <p className="text-xs text-slate-400 max-w-md mx-auto">{fetchError.message}</p>
+              <button
+                onClick={() => fetchCorrections()}
+                className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold inline-flex items-center space-x-1.5 transition-all shadow-md"
+              >
+                <span>Retry Request</span>
+              </button>
             </div>
           ) : corrections.length === 0 ? (
             <div className="p-10 text-center bg-[#0b132b] rounded-xl border border-[#1c2b50] space-y-3">

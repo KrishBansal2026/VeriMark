@@ -44,7 +44,7 @@ export default function SecurityAuditPage() {
           status: 401,
           title: 'Authentication Required (HTTP 401)',
           message: data.error || 'You must be authenticated to execute the cryptographic security audit.',
-          suggestion: 'Please sign in or select an Administrator (ADMIN) or Auditor (AUDITOR) profile from the identity switcher in the top navigation header.',
+          suggestion: 'Please sign in with an Administrator (ADMIN) or Auditor (AUDITOR) account.',
         });
         return;
       }
@@ -55,7 +55,7 @@ export default function SecurityAuditPage() {
           status: 403,
           title: 'Insufficient Permissions (HTTP 403)',
           message: data.error || 'Your current authenticated role lacks authorization to run the security audit.',
-          suggestion: 'Only authorized ADMIN or AUDITOR accounts may inspect deep ledger integrity. Please switch to an authorized profile in the top header.',
+          suggestion: 'Only authorized ADMIN or AUDITOR accounts may inspect deep ledger integrity. Please sign in with an authorized institutional account.',
         });
         return;
       }

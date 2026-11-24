@@ -15,12 +15,18 @@ import {
   FileText,
   LogOut,
   LogIn,
+  Users,
+  Calendar,
+  UserCog,
 } from 'lucide-react';
 import { AuthUser } from '@/lib/types';
 
 const adminNavigation = [
   { name: 'Admin Dashboard', href: '/', icon: LayoutDashboard },
+  { name: 'Student Directory', href: '/students', icon: Users },
+  { name: 'Examinations', href: '/examinations', icon: Calendar },
   { name: 'Student Results', href: '/results', icon: GraduationCap },
+  { name: 'User Management', href: '/users', icon: UserCog },
   { name: 'Analytics', href: '/analytics', icon: BarChart3 },
   { name: 'Ledger Explorer', href: '/ledger', icon: Network },
   { name: 'Dual Approvals', href: '/corrections', icon: UserCheck },

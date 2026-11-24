@@ -35,11 +35,36 @@ export default function StudentMarksheetPage() {
   const [verifyUrl, setVerifyUrl] = useState<string>('');
   const [qrLoading, setQrLoading] = useState(false);
   const [copiedHash, setCopiedHash] = useState(false);
+  const [fetchError, setFetchError] = useState<{
+    type: 'ACCESS_DENIED' | 'SERVER_ERROR' | 'NETWORK_ERROR';
+    message: string;
+  } | null>(null);
 
   const fetchResultsAndQr = async () => {
     setLoading(true);
+    setFetchError(null);
     try {
       const res = await fetch('/api/student/results');
+      if (res.status === 401) {
+        window.location.href = `/login?redirect=${encodeURIComponent(window.location.pathname)}`;
+        return;
+      }
+      if (res.status === 403) {
+        setFetchError({
+          type: 'ACCESS_DENIED',
+          message:
+            'Access Forbidden: Your account is not authorized to access this student marksheet.',
+        });
+        return;
+      }
+      if (!res.ok) {
+        setFetchError({
+          type: 'SERVER_ERROR',
+          message: `Academic result service returned error status ${res.status}. Please retry or contact the examinations controller.`,
+        });
+        return;
+      }
+
       const data = await res.json();
       if (data.success && data.results?.length > 0) {
         setResults(data.results);
@@ -55,9 +80,20 @@ export default function StudentMarksheetPage() {
 
         // Fetch high-resolution verification QR code
         fetchQrCode(activeResult.id);
+      } else if (data.success) {
+        setResults([]);
+      } else {
+        setFetchError({
+          type: 'SERVER_ERROR',
+          message: data.error || 'Failed to retrieve authenticated student marksheet records.',
+        });
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to load marksheet data:', err);
+      setFetchError({
+        type: 'NETWORK_ERROR',
+        message: 'Network disruption encountered while communicating with VeriMark ledger services.',
+      });
     } finally {
       setLoading(false);
     }
@@ -175,9 +211,26 @@ export default function StudentMarksheetPage() {
           <div className="py-24 text-center text-slate-400 animate-pulse text-sm">
             Retrieving cryptographic academic transcript...
           </div>
+        ) : fetchError ? (
+          <div className="p-8 text-center bg-[#0b132b] rounded-xl border border-rose-500/30 space-y-3">
+            <div className="text-rose-400 font-bold text-sm">
+              {fetchError.type === 'ACCESS_DENIED'
+                ? 'Access Denied (403)'
+                : 'Connection / Service Error'}
+            </div>
+            <p className="text-xs text-slate-400 max-w-md mx-auto">{fetchError.message}</p>
+            <button
+              onClick={() => fetchResultsAndQr()}
+              className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold inline-flex items-center space-x-1.5 transition-all shadow-md"
+            >
+              <span>Retry Request</span>
+            </button>
+          </div>
         ) : !selectedResult ? (
           <div className="p-8 text-center bg-[#0b132b] rounded-xl border border-[#1c2b50]">
-            <p className="text-slate-400 text-sm">No published examination results found for this student account.</p>
+            <p className="text-slate-400 text-sm">
+              No published examination results found for this student account.
+            </p>
           </div>
         ) : (
           /* ================================================================ */
